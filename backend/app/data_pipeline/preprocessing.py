@@ -183,14 +183,17 @@ def _load_nifti(image_path: str | Path) -> nib.spatialimages.SpatialImage:
 
 
 def _prepare_array(image: nib.spatialimages.SpatialImage, *, ensure_3d: bool = True) -> np.ndarray:
+    if len(image.shape) == 4 and image.shape[-1] != 1:
+        raise ValueError(
+            '4D MRI images with multiple volumes are unsupported; provide a single 3D volume.'
+        )
+    if len(image.shape) not in (3, 4):
+        raise ValueError(f'Unsupported MRI image dimensionality: {len(image.shape)}. Expected a 3D volume.')
     data = np.asarray(image.get_fdata(dtype=np.float32), dtype=np.float32)
     if not np.isfinite(data).all():
         raise ValueError('MRI data contains non-finite values that cannot be processed safely.')
     if data.ndim == 4 and ensure_3d:
-        if data.shape[-1] <= 1:
-            data = data[..., 0]
-        else:
-            data = data[..., 0]
+        data = data[..., 0]
     if data.ndim != 3:
         raise ValueError(f'Unsupported MRI array dimensionality: {data.ndim}. Expected a 3D volume.')
     return data
@@ -279,7 +282,7 @@ def preprocess_image_with_metadata(
         'original_shape': tuple(int(v) for v in image.shape[:3]),
         'canonical_shape': tuple(int(v) for v in canonical.shape[:3]),
         'voxel_sizes': tuple(float(v) for v in canonical.header.get_zooms()[:3]),
-        'orientation': nib.orientations.ornt_mapping(nib.io_orientation(canonical.affine))[-1].tolist() if image.shape else [],
+        'orientation': ''.join(nib.aff2axcodes(canonical.affine)),
         'dtype': str(data.dtype),
     }
     processed = preprocess_image(image_path, preprocess_config)

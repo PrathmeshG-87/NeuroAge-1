@@ -1,50 +1,103 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import { KPICard } from '@/components/data-display/KPICard'
 import { MedicalDisclaimer } from '@/components/assessment/MedicalDisclaimer'
-import { CheckCircle2, Sliders, Database, Cpu } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Sliders, Database, Cpu } from 'lucide-react'
+import {
+  modelMetricsService,
+  type ModelEvaluationMetrics,
+} from '@/services/model'
+
+const formatMetric = (value: number | null) =>
+  value === null || !Number.isFinite(value) ? 'Unavailable' : value.toFixed(2)
 
 export const ModelInfoPage: React.FC = () => {
+  const [metrics, setMetrics] = useState<ModelEvaluationMetrics | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    modelMetricsService
+      .getMetrics()
+      .then((result) => {
+        if (active) setMetrics(result)
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'Unable to load model evaluation metrics.',
+          )
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-bold tracking-tight text-[#ebecef]">
-          Model Performance & Evaluation Metrics
+          Model & Evaluation Metrics
         </h2>
         <p className="text-xs text-[#8d909c] font-mono mt-0.5">
-          Independent Test Set Evaluation (Subject-Level Stratified Split)
+          Metrics are displayed only when supplied by the configured evaluation artifact.
         </p>
       </div>
 
-      {/* Model Performance KPIs */}
+      {error && (
+        <Card className="flex items-center gap-3 text-sm text-[#fca5a5]">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           label="Mean Absolute Error (MAE)"
-          value="4.18"
+          value={
+            metrics
+              ? formatMetric(metrics.mae)
+              : error
+                ? 'Unavailable'
+                : 'Loading'
+          }
           unit="years"
-          delta={{ value: 'Target < 5.0 yrs', status: 'resilient' }}
-          subtext="Test set N = 184"
+          subtext={metrics?.nTestSamples ? `Test samples: ${metrics.nTestSamples}` : undefined}
           icon={<CheckCircle2 className="w-4 h-4 text-[#5eead4]" />}
         />
         <KPICard
           label="Root Mean Squared Error (RMSE)"
-          value="5.32"
+          value={
+            metrics
+              ? formatMetric(metrics.rmse)
+              : error
+                ? 'Unavailable'
+                : 'Loading'
+          }
           unit="years"
-          subtext="Residual std dev"
           icon={<Sliders className="w-4 h-4 text-[#8d909c]" />}
         />
         <KPICard
           label="Pearson Correlation (r)"
-          value="0.91"
+          value={
+            metrics
+              ? formatMetric(metrics.pearsonR)
+              : error
+                ? 'Unavailable'
+                : 'Loading'
+          }
           subtext="Chronological vs Predicted"
-          delta={{ value: 'p < 0.001', status: 'resilient' }}
           icon={<Cpu className="w-4 h-4 text-[#5eead4]" />}
         />
         <KPICard
-          label="Age-Bias Correction"
-          value="Fitted"
-          subtext="Cole et al. linear reg"
-          delta={{ value: 'Training fold only', status: 'typical' }}
+          label="Test samples"
+          value={
+            metrics?.nTestSamples == null ? (error ? 'Unavailable' : 'Loading') : metrics.nTestSamples
+          }
+          subtext={metrics?.datasetEvaluated ?? 'Evaluation dataset'}
           icon={<Database className="w-4 h-4 text-[#8d909c]" />}
         />
       </div>
@@ -52,44 +105,36 @@ export const ModelInfoPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="space-y-3">
           <h3 className="text-sm font-mono font-semibold uppercase tracking-wider text-[#ebecef]">
-            Dataset Sources & Cohort Composition
+            Configured model
           </h3>
-          <p className="text-sm text-[#c6c9d2] leading-relaxed">
-            The candidate models were evaluated on publicly accessible datasets
-            adhering to data-use compliance agreements:
+          <p className="text-sm text-[#c6c9d2]">
+            Model: {metrics?.modelName ?? 'Loading'}
           </p>
-          <ul className="text-xs font-mono text-[#8d909c] space-y-2 list-disc list-inside">
-            <li>
-              <strong>IXI Dataset</strong>: Healthy volunteers (Age 20-86), 3T
-              Philips scanner, N=560
-            </li>
-            <li>
-              <strong>OASIS-1 / OASIS-3</strong>: Cross-sectional normal aging
-              cohorts (Age 18-90), N=416
-            </li>
-            <li>
-              Subject-level train/validation/test split (70% / 15% / 15%)
-              strictly preventing subject leakage.
-            </li>
-          </ul>
+          <p className="text-sm text-[#c6c9d2]">
+            Architecture: {metrics?.architecture ?? 'Loading'}
+          </p>
+          <p className="text-sm text-[#c6c9d2]">
+            Evaluation dataset: {metrics?.datasetEvaluated ?? (error ? 'Unavailable' : 'Loading')}
+          </p>
+          <p className="text-sm text-[#c6c9d2]">
+            Last evaluated: {metrics?.lastEvaluated ?? 'Not recorded'}
+          </p>
         </Card>
 
         <Card className="space-y-3">
           <h3 className="text-sm font-mono font-semibold uppercase tracking-wider text-[#ebecef]">
-            Bias Correction & Limitations
+            Interpretation and limitations
           </h3>
           <p className="text-sm text-[#c6c9d2] leading-relaxed">
-            Regression-toward-the-mean is a documented challenge in brain age
-            prediction where younger subjects are slightly overestimated and
-            older subjects are underestimated:
+            Test MAE and RMSE are measured in years. Pearson correlation
+            describes association, not individual prediction accuracy. Metrics
+            are meaningful only for the dataset and evaluation protocol recorded
+            with the model.
           </p>
-          <div className="p-3 bg-[#0a0b0e] border border-white/10 rounded-lg text-xs font-mono text-[#ebecef]">
-            PAD_corrected = Predicted_Age - (α * Chrono_Age + β)
-          </div>
           <p className="text-xs text-[#8d909c]">
-            The correction regression coefficients (α, β) were derived
-            exclusively on the training set and applied out-of-fold without
-            leakage.
+            No external-cohort validation or age-bias correction is claimed by
+            this page. NeuroAge is research software and is not a diagnostic
+            system.
           </p>
         </Card>
       </div>

@@ -6,8 +6,8 @@ This project currently contains a FastAPI backend, a React frontend, test scaffo
 
 The repository evidence reviewed includes:
 
-- Backend service contract in [app/services/ml_inference.py](../app/services/ml_inference.py)
-- Backend configuration in [app/core/config.py](../app/core/config.py)
+- Backend service contract in [ml_inference.py](../backend/app/services/ml_inference.py)
+- Backend configuration in [config.py](../backend/app/core/config.py)
 - Frontend model and reporting contracts in [frontend/src/services/model.ts](../frontend/src/services/model.ts) and [frontend/src/services/reports.ts](../frontend/src/services/reports.ts)
 - Product and UX guidance in [DESIGN.md](../DESIGN.md)
 - API documentation in [docs/api-contract.md](api-contract.md)
@@ -21,8 +21,8 @@ The current ML status is explicitly unavailable by design.
 
 Evidence from the repository:
 
-- [app/core/config.py](../app/core/config.py) defines MODEL_ARTIFACT_PATH and MODEL_EVALUATION_METRICS_PATH as optional runtime settings.
-- [app/services/ml_inference.py](../app/services/ml_inference.py) returns a clear unavailable status when no artifact is configured or loadable.
+- [config.py](../backend/app/core/config.py) defines MODEL_ARTIFACT_PATH and MODEL_EVALUATION_METRICS_PATH as optional runtime settings.
+- [ml_inference.py](../backend/app/services/ml_inference.py) returns a clear unavailable status when no artifact is configured or loadable.
 - [docs/ml-model-contract.md](ml-model-contract.md) states that inference must fail explicitly rather than fabricate results.
 - [README.md](../README.md) explicitly notes that actual ML model artifact availability and artifact versioning remain environment-dependent.
 

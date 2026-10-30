@@ -7,6 +7,7 @@ import nibabel as nib
 import numpy as np
 import pytest
 
+from app.data_pipeline.baseline_regression import extract_intensity_features
 from app.inference import (
     InferenceConfig,
     ModelLoadError,
@@ -59,9 +60,9 @@ def test_predict_brain_age_uses_safe_json_artifact(tmp_path: Path) -> None:
     artifact_path.write_text(
         json.dumps({
             'model_type': 'ridge_regression',
-            'coefficients': [0.5, 0.0, 0.0],
+            'coefficients': [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             'intercept': 10.0,
-            'feature_names': ['feature_0', 'feature_1', 'feature_2'],
+            'feature_names': [f'feature_{idx}' for idx in range(8)],
             'model_version': 'demo-v1',
             'model_name': 'ridge-regression-demo',
         }),
@@ -94,6 +95,9 @@ def test_predict_brain_age_uses_safe_json_artifact(tmp_path: Path) -> None:
     assert output['status'] == 'completed'
     assert 'predicted_brain_age' in output
     assert isinstance(output['predicted_brain_age'], float)
+    assert output['predicted_brain_age'] == pytest.approx(
+        10.0 + 0.5 * extract_intensity_features(np.full((16, 16, 16), 2.0))[0]
+    )
 
 
 def test_missing_artifact_fails_explicitly(tmp_path: Path) -> None:

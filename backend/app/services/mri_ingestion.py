@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import io
 import re
+import secrets
 import tempfile
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import nibabel as nib
 import numpy as np
 from fastapi import HTTPException, UploadFile, status
+from PIL import Image
 
 from app.core.config import settings
 
@@ -42,7 +43,7 @@ def _storage_root() -> Path:
 
 
 def _read_file_bytes(file: UploadFile) -> bytes:
-    data = file.file.read()
+    data = file.file.read(settings.max_upload_size_bytes + 1)
     try:
         file.file.seek(0)
     except (AttributeError, OSError):
@@ -62,7 +63,7 @@ def _load_nifti_from_bytes(file_bytes: bytes, filename_hint: str | None) -> nib.
         tmp.write(file_bytes)
         temp_path = Path(tmp.name)
     try:
-        return nib.load(str(temp_path))
+        return nib.load(str(temp_path), mmap=False)
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -92,6 +93,10 @@ def analyse_mri_upload(file_name: str | None, file_bytes: bytes) -> dict[str, An
             shape = list(header.get_data_shape())
             if not shape or any(int(dim) <= 0 for dim in shape):
                 errors.append('The MRI header is invalid or has non-positive image dimensions.')
+            elif len(shape) not in (3, 4) or (len(shape) == 4 and int(shape[3]) != 1):
+                errors.append('Only single-volume 3D NIfTI images are supported.')
+            elif int(np.prod(shape[:3], dtype=np.int64)) > settings.max_decoded_voxels:
+                errors.append('The MRI volume exceeds the maximum supported decoded voxel count.')
             else:
                 dimensions = [int(dim) for dim in shape[:3]]
                 voxel_data = header.get_zooms()[:3]
@@ -122,14 +127,16 @@ def validate_mri_file(file: UploadFile | None, *, fallback_name: str | None = No
     return analyse_mri_upload(original_name, file_bytes)
 
 
-def _generate_preview_from_nifti(file_bytes: bytes) -> dict[str, Any]:
+def _generate_preview_from_nifti(file_bytes: bytes, filename_hint: str | None) -> dict[str, Any]:
     try:
-        with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as tmp:
+        extension = _normalized_extension(filename_hint)
+        suffix = '.nii.gz' if extension == '.nii.gz' else '.nii'
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(file_bytes)
             temp_path = Path(tmp.name)
         try:
-            image = nib.load(str(temp_path))
-            array = np.asarray(image.get_fdata(dtype=np.float32))
+            image = nib.as_closest_canonical(nib.load(str(temp_path), mmap=False))
+            dimensions = [int(value) for value in image.shape[:3]]
         finally:
             temp_path.unlink(missing_ok=True)
     except Exception:
@@ -138,66 +145,75 @@ def _generate_preview_from_nifti(file_bytes: bytes) -> dict[str, Any]:
             'fileType': 'nii',
             'url': None,
             'message': 'Preview generation is unavailable because the uploaded NIfTI data could not be decoded.',
-            'availableViews': ['axial'],
+            'availableViews': [],
         }
 
-    data = np.nan_to_num(array, nan=0.0, posinf=0.0, neginf=0.0)
-    if data.ndim == 4:
-        data = data[..., 0]
-    if data.ndim == 1:
-        data = data.reshape(1, -1)
-    if data.ndim == 3:
-        axis_index = max(0, min(data.shape[2] - 1, data.shape[2] // 2))
-        data = data[:, :, axis_index]
-    if data.ndim != 2:
-        data = np.mean(data, axis=0) if data.ndim == 3 else data
-    if data.size == 0:
+    if len(image.shape) not in (3, 4) or any(value <= 0 for value in dimensions):
         return {
             'available': False,
             'fileType': 'nii',
             'url': None,
-            'message': 'Preview generation is unavailable because the uploaded NIfTI data is empty.',
-            'availableViews': ['axial'],
+            'message': 'Preview generation is unavailable because this NIfTI volume has unsupported dimensions.',
+            'availableViews': [],
         }
 
-    finite_data = np.asarray(data, dtype=np.float32)
-    min_value = float(np.min(finite_data))
-    max_value = float(np.max(finite_data))
-    if not np.isfinite(min_value) or not np.isfinite(max_value) or max_value == min_value:
-        normalized = np.zeros_like(finite_data, dtype=np.float32)
-    else:
-        normalized = (finite_data - min_value) / (max_value - min_value + 1e-8)
-
-    target_width = 120
-    target_height = 120
-    sample_y = np.linspace(0, finite_data.shape[0] - 1, target_height, dtype=int)
-    sample_x = np.linspace(0, finite_data.shape[1] - 1, target_width, dtype=int)
-    sampled = normalized[np.ix_(sample_y, sample_x)]
-
-    svg_parts: list[str] = [
-        '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 120 120">',
-        '<rect width="120" height="120" fill="#07080b"/>',
-    ]
-    for row_idx, row in enumerate(sampled):
-        for col_idx, value in enumerate(row):
-            intensity = float(value)
-            grayscale = int(max(0, min(255, round(intensity * 255))))
-            svg_parts.append(
-                f'<rect x="{col_idx}" y="{row_idx}" width="1" height="1" fill="rgb({grayscale},{grayscale},{grayscale})" />'
-            )
-    svg_parts.append('</svg>')
-    svg_document = ''.join(svg_parts)
-    data_url = 'data:image/svg+xml;charset=utf-8,' + quote(svg_document)
     return {
         'available': True,
-        'fileType': 'image',
-        'url': data_url,
-        'message': 'MRI preview generated from the central axial slice of the uploaded NIfTI volume.',
-        'availableViews': ['axial'],
+        'fileType': 'nii',
+        'url': None,
+        'message': 'MRI volume is ready for interactive slice rendering.',
+        'availableViews': ['axial', 'coronal', 'sagittal'],
+        'dimensions': dimensions,
     }
 
 
-def save_valid_mri_upload(file: UploadFile | None, *, subject_id: str | None = None) -> dict[str, Any]:
+def render_mri_slice(file_path: Path, plane: str, slice_index: int) -> tuple[bytes, tuple[int, int, int]]:
+    image = nib.as_closest_canonical(nib.load(str(file_path)))
+    if len(image.shape) not in (3, 4):
+        raise ValueError('Only 3D or 4D NIfTI volumes can be displayed.')
+
+    dimensions = tuple(int(value) for value in image.shape[:3])
+    axis = {'sagittal': 0, 'coronal': 1, 'axial': 2}[plane]
+    if not 0 <= slice_index < dimensions[axis]:
+        raise IndexError(f'Slice index must be between 0 and {dimensions[axis] - 1}.')
+
+    selection: list[int | slice] = [slice(None), slice(None), slice_index]
+    if axis == 1:
+        selection = [slice(None), slice_index, slice(None)]
+    elif axis == 0:
+        selection = [slice_index, slice(None), slice(None)]
+    if len(image.shape) == 4:
+        selection.append(0)
+
+    pixels = np.asarray(image.dataobj[tuple(selection)], dtype=np.float32)
+    if axis == 2:
+        pixels = pixels.T
+
+    finite = pixels[np.isfinite(pixels)]
+    if finite.size == 0:
+        raise ValueError('The selected MRI slice contains no finite voxel values.')
+
+    nonzero = finite[finite != 0]
+    sample = nonzero if nonzero.size else finite
+    lower, upper = np.percentile(sample, (2, 98))
+    if upper <= lower:
+        upper = lower + 1
+    normalized = np.clip((np.nan_to_num(pixels, nan=lower) - lower) / (upper - lower), 0, 1)
+    grayscale = np.round(normalized * 255).astype(np.uint8)
+    rendered = Image.fromarray(grayscale)
+    rendered.thumbnail((512, 512), Image.Resampling.LANCZOS)
+
+    output = BytesIO()
+    rendered.save(output, format='PNG', optimize=True)
+    return output.getvalue(), dimensions
+
+
+def save_valid_mri_upload(
+    file: UploadFile | None,
+    *,
+    subject_id: str | None = None,
+    subject_name: str | None = None,
+) -> dict[str, Any]:
     if file is None:
         exc = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No MRI file was provided.')
         exc.code = 'invalid_file'
@@ -222,8 +238,8 @@ def save_valid_mri_upload(file: UploadFile | None, *, subject_id: str | None = N
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_bytes(file_bytes)
 
-    assessment_id = f'assessment_{uuid.uuid4().hex}'
-    preview = _generate_preview_from_nifti(file_bytes)
+    assessment_id = f'NA-{secrets.token_urlsafe(9)}'
+    preview = _generate_preview_from_nifti(file_bytes, original_name)
     payload = {
         'id': assessment_id,
         'assessmentId': assessment_id,
@@ -231,6 +247,9 @@ def save_valid_mri_upload(file: UploadFile | None, *, subject_id: str | None = N
         'message': 'MRI uploaded and validated. Ready for preprocessing.',
         'created_at': datetime.now(timezone.utc).isoformat(),
         'subject_id': subject_id,
+        'subject_name': subject_name,
         'preview': preview,
+        'storage_path': str(target_path),
+        'dimensions': preview.get('dimensions') or validation['dimensions'],
     }
     return payload

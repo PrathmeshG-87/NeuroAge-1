@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.api.v1 import router as router_module
 from app.core.config import settings
@@ -51,7 +52,11 @@ def valid_nifti_bytes() -> bytes:
 
 @pytest.fixture
 def sqlite_engine():
-    engine = create_engine('sqlite:///:memory:')
+    engine = create_engine(
+        'sqlite://',
+        connect_args={'check_same_thread': False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     yield engine
     Base.metadata.drop_all(engine)
@@ -219,7 +224,19 @@ def test_report_content_and_generation_matches_assessment_data() -> None:
     assert 'Research use only' in text
 
 
-def test_mri_upload_to_assessment_workflow(isolated_assessment_store, valid_nifti_bytes) -> None:
+def test_mri_upload_to_assessment_workflow(
+    isolated_assessment_store,
+    valid_nifti_bytes,
+    monkeypatch,
+) -> None:
+    class UnavailableInferenceService:
+        def is_ready(self):
+            return False
+
+        def get_status(self):
+            return {'status': 'unavailable', 'message': 'Model is not configured for this test.'}
+
+    monkeypatch.setattr(router_module, 'get_inference_service', UnavailableInferenceService)
     response = client.post(
         '/api/v1/assessments',
         files={'file': ('scan_003.nii.gz', io.BytesIO(valid_nifti_bytes), 'application/octet-stream')},
@@ -232,7 +249,116 @@ def test_mri_upload_to_assessment_workflow(isolated_assessment_store, valid_nift
     allowed = client.get(f'/api/v1/assessments/{assessment_id}', headers={'X-User-Id': 'user-upload-flow'})
     assert allowed.status_code == 200
     assert allowed.json()['assessment_id'] == assessment_id
-    assert allowed.json()['status'] == 'queued'
+    assert allowed.json()['status'] == 'failed'
+    assert allowed.json()['message']
+
+
+def test_assessment_runs_inference_and_persists_result(
+    isolated_assessment_store,
+    valid_nifti_bytes,
+    monkeypatch,
+) -> None:
+    class ReadyInferenceService:
+        def is_ready(self):
+            return True
+
+        def predict(self, volume, **kwargs):
+            assert volume.shape == (6, 7, 8)
+            return {
+                'predicted_brain_age': 70.0,
+                'brain_age_difference': 9.0,
+                'uncertainty_interval': None,
+                'model_name': 'NeuroAge-ResNet3D-18',
+                'model_version': 'test',
+                'status': 'completed',
+            }
+
+    monkeypatch.setattr(router_module, 'get_inference_service', ReadyInferenceService)
+    response = client.post(
+        '/api/v1/assessments',
+        files={'file': ('scan_inference.nii.gz', io.BytesIO(valid_nifti_bytes), 'application/octet-stream')},
+        data={'chronological_age': '61.0', 'subject_id': 'subject-inference'},
+        headers={'X-User-Id': 'user-inference'},
+    )
+    assert response.status_code == 200, response.text
+    assessment_id = response.json()['assessment_id']
+
+    result = client.get(
+        f'/api/v1/assessments/{assessment_id}',
+        headers={'X-User-Id': 'user-inference'},
+    )
+    assert result.status_code == 200
+    assert result.json()['status'] == 'completed'
+    assert result.json()['predicted_brain_age'] == 70.0
+    assert result.json()['brain_age_difference'] == 9.0
+
+
+def test_assessment_name_and_result_survive_memory_cache_clear(
+    valid_nifti_bytes,
+    monkeypatch,
+) -> None:
+    class UnavailableInferenceService:
+        def is_ready(self):
+            return False
+
+        def get_status(self):
+            return {'status': 'unavailable', 'message': 'Model unavailable in test.'}
+
+    monkeypatch.setattr(router_module, 'get_inference_service', UnavailableInferenceService)
+    response = client.post(
+        '/api/v1/assessments',
+        files={'file': ('scan-persistence.nii.gz', io.BytesIO(valid_nifti_bytes), 'application/octet-stream')},
+        data={'subject_name': 'Alex Morgan'},
+        headers={'X-User-Id': 'user-persistence'},
+    )
+    assert response.status_code == 200
+    assessment_id = response.json()['assessment_id']
+    assert response.json()['subject_name'] == 'Alex Morgan'
+
+    router_module._ASSESSMENTS.pop(assessment_id)
+    result = client.get(
+        f'/api/v1/assessments/{assessment_id}',
+        headers={'X-Assessment-Token': response.json()['access_token']},
+    )
+    router_module._ASSESSMENTS.clear()
+    router_module.restore_assessments()
+    restored_record = router_module._ASSESSMENTS[assessment_id]
+
+    assert result.status_code == 200
+    assert result.json()['subject_name'] == 'Alex Morgan'
+    assert result.json()['status'] == 'failed'
+    assert restored_record['access_token'] == response.json()['access_token']
+
+
+def test_assessment_history_uses_persisted_records(
+    valid_nifti_bytes,
+    monkeypatch,
+) -> None:
+    class UnavailableInferenceService:
+        def is_ready(self):
+            return False
+
+        def get_status(self):
+            return {'status': 'unavailable', 'message': 'Model unavailable in test.'}
+
+    monkeypatch.setattr(router_module, 'get_inference_service', UnavailableInferenceService)
+    response = client.post(
+        '/api/v1/assessments',
+        files={'file': ('scan-history.nii.gz', io.BytesIO(valid_nifti_bytes), 'application/octet-stream')},
+        data={'subject_name': 'Jordan Lee'},
+        headers={'X-User-Id': 'user-history'},
+    )
+    assert response.status_code == 200
+    router_module._ASSESSMENTS.clear()
+
+    history = client.get(
+        '/api/v1/assessments',
+        headers={'X-User-Id': 'user-history'},
+    )
+
+    assert history.status_code == 200
+    assert history.json()['total'] == 1
+    assert history.json()['items'][0]['subject_name'] == 'Jordan Lee'
 
 
 def test_assessment_preview_is_generated_for_valid_nifti(isolated_assessment_store, valid_nifti_bytes) -> None:
@@ -252,7 +378,9 @@ def test_assessment_preview_is_generated_for_valid_nifti(isolated_assessment_sto
     assert retrieval.status_code == 200, retrieval.text
     result = retrieval.json()
     assert result['preview']['available'] is True
-    assert result['preview']['url'].startswith('data:image/svg+xml')
+    assert result['preview']['url'] is None
+    assert result['preview']['sliceEndpoint'] == f'/api/v1/assessments/{assessment_id}/mri/slice'
+    assert result['preview']['dimensions'] == [6, 7, 8]
 
 
 def test_history_pagination_and_result_retrieval(isolated_assessment_store) -> None:

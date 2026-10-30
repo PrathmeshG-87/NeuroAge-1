@@ -4,6 +4,7 @@ import json
 import math
 import pickle
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -73,7 +74,10 @@ class BrainAgeInferenceService:
     def _resolve_path(value: str | Path | None) -> Path | None:
         if value in (None, ''):
             return None
-        return Path(str(value)).expanduser()
+        path = Path(str(value)).expanduser()
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parents[2] / path
+        return path
 
     def is_ready(self) -> bool:
         return self.model is not None
@@ -110,7 +114,17 @@ class BrainAgeInferenceService:
         elif suffix in {'.pt', '.pth'}:
             if torch is None:
                 raise ModelLoadError('PyTorch is required to load .pt/.pth artifacts.')
-            artifact = torch.load(path, map_location='cpu')
+            try:
+                artifact = torch.load(path, map_location='cpu', weights_only=True)
+            except TypeError as exc:
+                raise ModelLoadError(
+                    'This PyTorch version does not support safe weights-only checkpoint loading.'
+                ) from exc
+            if not isinstance(artifact, dict):
+                raise ModelLoadError('PyTorch checkpoint must contain a model state dictionary.')
+            from app.services.resnet3d import ResNet3D18Predictor
+
+            return ResNet3D18Predictor(artifact)
         else:
             raise ModelLoadError(f'Unsupported model artifact extension: {suffix or path.name}')
 
@@ -263,17 +277,24 @@ class BrainAgeInferenceService:
                 'model_version': self.model_version,
             }
 
+        test_metrics = payload.get('test_metrics')
+        test_metrics = test_metrics if isinstance(test_metrics, dict) else {}
         metrics: dict[str, Any] = {
             'status': 'ready',
-            'model_name': payload.get('model_name') or self.model_name,
+            'model_name': payload.get('model_name') or payload.get('model') or self.model_name,
             'model_version': payload.get('model_version') or self.model_version,
-            'architecture': payload.get('architecture'),
-            'mae': payload.get('mae'),
-            'rmse': payload.get('rmse'),
-            'pearson_r': payload.get('pearson_r'),
-            'dataset_name': payload.get('dataset_name') or payload.get('evaluation_dataset'),
-            'n_test_samples': payload.get('n_test_samples'),
+            'architecture': payload.get('architecture') or payload.get('model'),
+            'mae': payload.get('mae', test_metrics.get('mae')),
+            'rmse': payload.get('rmse', test_metrics.get('rmse')),
+            'pearson_r': payload.get('pearson_r', test_metrics.get('pearson_r')),
+            'dataset_name': payload.get('dataset_name') or payload.get('evaluation_dataset') or payload.get('dataset'),
+            'n_test_samples': payload.get('n_test_samples', test_metrics.get('n_samples')),
             'bias_corrected': payload.get('bias_corrected'),
             'last_evaluated': payload.get('last_evaluated'),
         }
         return {key: value for key, value in metrics.items() if key in self.ALLOWED_METRICS_KEYS or key == 'status'}
+
+
+@lru_cache(maxsize=1)
+def get_inference_service() -> BrainAgeInferenceService:
+    return BrainAgeInferenceService()

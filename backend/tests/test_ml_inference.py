@@ -80,6 +80,40 @@ def test_model_status_uses_documented_metrics_when_available(tmp_path: Path) -> 
     assert metrics['pearson_r'] == 0.91
 
 
+def test_model_status_reads_nested_kaggle_evaluation_metrics(tmp_path: Path) -> None:
+    metrics_path = tmp_path / 'kaggle_metrics.json'
+    metrics_path.write_text(
+        json.dumps(
+            {
+                'model': 'NeuroAge-ResNet3D-18',
+                'dataset': 'kingpowa/preprocessed-ixi-dataset-with-fs8',
+                'test_metrics': {
+                    'mae': 6.556510153270903,
+                    'rmse': 8.940655514534445,
+                    'pearson_r': 0.8768707228804604,
+                    'n_samples': 84,
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+
+    service = BrainAgeInferenceService(
+        model_artifact_path=None,
+        evaluation_metrics_path=metrics_path,
+    )
+    metrics = service.get_metrics()
+
+    assert metrics['status'] == 'ready'
+    assert metrics['model_name'] == 'NeuroAge-ResNet3D-18'
+    assert metrics['architecture'] == 'NeuroAge-ResNet3D-18'
+    assert metrics['mae'] == pytest.approx(6.556510153270903)
+    assert metrics['rmse'] == pytest.approx(8.940655514534445)
+    assert metrics['pearson_r'] == pytest.approx(0.8768707228804604)
+    assert metrics['dataset_name'] == 'kingpowa/preprocessed-ixi-dataset-with-fs8'
+    assert metrics['n_test_samples'] == 84
+
+
 class ValidPredictor:
     def predict(self, value):
         return {'predicted_brain_age': 71.0, 'uncertainty_interval': [68.5, 73.5]}

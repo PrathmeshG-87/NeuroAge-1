@@ -17,7 +17,7 @@ These are not externally valid research metrics. They reflect a synthetic or sma
 
 ## Evaluation workflow
 
-The evaluation is implemented in [app/data_pipeline/baseline_regression.py](../app/data_pipeline/baseline_regression.py) and supports:
+The evaluation is implemented in [baseline_regression.py](../backend/app/data_pipeline/baseline_regression.py) and supports:
 
 - overall metrics
 - age-group summaries

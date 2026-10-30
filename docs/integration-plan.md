@@ -5,8 +5,8 @@
 This repository was inspected as a three-workstream delivery:
 
 - Frontend workstream: [frontend](../frontend)
-- Backend workstream: [app](../app)
-- ML/data workstream: [app/data_pipeline](../app/data_pipeline), [app/services/ml_inference.py](../app/services/ml_inference.py), [docs](.) and [tests](../tests)
+- Backend workstream: [backend](../backend)
+- ML/data workstream: [data_pipeline](../backend/app/data_pipeline), [ml_inference.py](../backend/app/services/ml_inference.py), [docs](.) and [tests](../backend/tests)
 
 The inspection confirmed that the project is structurally organized for a brain-age assessment application, but the deployed runtime is still a controlled prototype rather than a production-grade integrated system.
 
@@ -44,14 +44,14 @@ Limitations:
 
 Evidence reviewed:
 
-- [app/main.py](../app/main.py)
-- [app/api/v1/router.py](../app/api/v1/router.py)
-- [app/core/config.py](../app/core/config.py)
-- [app/core/security.py](../app/core/security.py)
-- [app/services/mri_ingestion.py](../app/services/mri_ingestion.py)
-- [app/services/report_service.py](../app/services/report_service.py)
-- [app/db/models](../app/db/models)
-- [app/db/session.py](../app/db/session.py)
+- [main.py](../backend/app/main.py)
+- [router.py](../backend/app/api/v1/router.py)
+- [config.py](../backend/app/core/config.py)
+- [security.py](../backend/app/core/security.py)
+- [mri_ingestion.py](../backend/app/services/mri_ingestion.py)
+- [report_service.py](../backend/app/services/report_service.py)
+- [models](../backend/app/db/models)
+- [session.py](../backend/app/db/session.py)
 
 Verified functionality:
 
@@ -72,12 +72,12 @@ Limitations:
 
 Evidence reviewed:
 
-- [app/services/ml_inference.py](../app/services/ml_inference.py)
-- [app/data_pipeline/baseline_regression.py](../app/data_pipeline/baseline_regression.py)
+- [ml_inference.py](../backend/app/services/ml_inference.py)
+- [baseline_regression.py](../backend/app/data_pipeline/baseline_regression.py)
 - [docs/ml-architecture.md](ml-architecture.md)
 - [docs/model-evaluation-report.md](model-evaluation-report.md)
 - [docs/ml-data-and-artifacts-inventory.md](ml-data-and-artifacts-inventory.md)
-- [tests/test_ml_inference.py](../tests/test_ml_inference.py)
+- [test_ml_inference.py](../backend/tests/test_ml_inference.py)
 
 Verified functionality:
 
@@ -100,10 +100,10 @@ The ML Engineer has not produced a genuinely trained production model in this re
 
 Verified evidence:
 
-- [app/core/config.py](../app/core/config.py) leaves both model paths empty by default.
+- [config.py](../backend/app/core/config.py) leaves both model paths empty by default.
 - [docs/ml-data-and-artifacts-inventory.md](ml-data-and-artifacts-inventory.md) states there are no tracked .pkl, .joblib, .pt, .pth, .onnx, or .h5 model files.
 - [docs/model-evaluation-report.md](model-evaluation-report.md) explicitly states the results are from a synthetic six-subject validation fixture, not a real external cohort.
-- [tests/test_ml_inference.py](../tests/test_ml_inference.py) uses dummy predictors and missing-artifact checks; it validates the contract, not a trained ML artifact.
+- [test_ml_inference.py](../backend/tests/test_ml_inference.py) uses dummy predictors and missing-artifact checks; it validates the contract, not a trained ML artifact.
 - [README.md](../README.md) explicitly warns that live model artifacts and deployment controls remain environment-dependent.
 
 This is a prototype or engineering scaffold, not a validated trained model artifact.
@@ -133,7 +133,7 @@ This means the UI can run without the backend, but the app will not reflect real
 
 The backend requires `X-User-Id` or `Authorization: Bearer neuroage-user:<user_id>`:
 
-- [app/core/security.py](../app/core/security.py)
+- [security.py](../backend/app/core/security.py)
 
 The frontend does not currently send those headers for normal API calls, so backend-protected routes will fail without a front-end auth layer.
 

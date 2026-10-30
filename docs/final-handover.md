@@ -33,11 +33,11 @@ The current migration creates the core schema for:
 - `reports`
 - `audit_events`
 
-The schema lives in `alembic/versions/20261018_initial_schema.py` and is initialized via `alembic upgrade head`.
+The schema lives in `backend/alembic/versions/20261018_initial_schema.py` and is initialized by running `python -m alembic -c alembic.ini upgrade head` from `backend/`.
 
 ## ML integration status
 
-The backend has a dedicated ML contract layer at `app/services/ml_inference.py`.
+The backend has a dedicated ML contract layer at `backend/app/services/ml_inference.py`.
 
 Current status:
 - model artifact loading is implemented with explicit unavailable behavior
@@ -82,7 +82,7 @@ The skipped tests are intentionally environment-dependent checks for:
 
 ## Required environment variables
 
-See `.env.example` for the canonical list. The important variables are:
+See `backend/.env.example` for the canonical list. The important variables are:
 
 - APP_NAME
 - APP_VERSION
@@ -109,20 +109,21 @@ See `.env.example` for the canonical list. The important variables are:
 
 ### Local dev
 
-```bash
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.txt
-cp .env.example .env
-alembic upgrade head
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r backend\requirements.txt
+Copy-Item backend\.env.example backend\.env
+Set-Location backend
+python -m alembic -c alembic.ini upgrade head
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ### Container deployment
 
 ```bash
-docker build -t neuroage-backend .
-docker run --rm -p 8000:8000 --env-file .env neuroage-backend
+docker build -t neuroage-backend ./backend
+docker run --rm -p 8000:8000 --env-file backend/.env neuroage-backend
 ```
 
 ## Known limitations and outstanding dependencies

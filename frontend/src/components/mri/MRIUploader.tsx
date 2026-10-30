@@ -55,6 +55,7 @@ export const MRIUploader: React.FC = () => {
 
   const [dragActive, setDragActive] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [subjectName, setSubjectName] = useState('')
   const [chronologicalAge, setChronologicalAge] = useState('')
   const [status, setStatus] = useState<AssessmentWorkflowState>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -63,6 +64,7 @@ export const MRIUploader: React.FC = () => {
   useEffect(() => {
     return () => {
       setSelectedFile(null)
+      setSubjectName('')
       setChronologicalAge('')
       setProgress(0)
       setError(null)
@@ -71,6 +73,7 @@ export const MRIUploader: React.FC = () => {
 
   const resetSelection = () => {
     setSelectedFile(null)
+    setSubjectName('')
     setChronologicalAge('')
     setStatus('idle')
     setProgress(0)
@@ -102,6 +105,13 @@ export const MRIUploader: React.FC = () => {
   }
 
   const handleSubmit = async () => {
+    const normalizedSubjectName = subjectName.trim()
+    if (!normalizedSubjectName) {
+      setStatus('failure')
+      setError('Enter a name for this assessment.')
+      return
+    }
+
     if (!selectedFile) {
       setStatus('failure')
       setError('Choose an MRI file to start the assessment.')
@@ -139,6 +149,7 @@ export const MRIUploader: React.FC = () => {
 
       const request: AssessmentSubmissionRequest = {
         file: selectedFile,
+        subjectName: normalizedSubjectName,
         chronologicalAge: ageText === '' ? undefined : Number(ageText),
       }
 
@@ -149,14 +160,6 @@ export const MRIUploader: React.FC = () => {
           setProgress(nextProgress)
         },
       )
-
-      setStatus('processing')
-      setProgress(82)
-
-      await assessmentService.waitForCompletion(createdAssessment.assessmentId, {
-        intervalMs: 1500,
-        maxAttempts: 12,
-      })
 
       setStatus('success')
       setProgress(100)
@@ -309,6 +312,25 @@ export const MRIUploader: React.FC = () => {
 
       <div className="space-y-2">
         <label
+          htmlFor="subject-name"
+          className="text-xs font-mono uppercase tracking-[0.16em] text-[#8d909c]"
+        >
+          Subject name
+        </label>
+        <input
+          id="subject-name"
+          type="text"
+          maxLength={120}
+          required
+          value={subjectName}
+          onChange={(event) => setSubjectName(event.target.value)}
+          placeholder="Enter a short name for this assessment"
+          className="w-full rounded-xl border border-white/10 bg-[#0a0b0e] px-3 py-3 text-sm text-[#ebecef] placeholder:text-[#6d7280] focus:border-[#5eead4]/40 focus:outline-none"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label
           htmlFor="chronological-age"
           className="text-xs font-mono uppercase tracking-[0.16em] text-[#8d909c]"
         >
@@ -333,9 +355,9 @@ export const MRIUploader: React.FC = () => {
           <div>
             <p className="font-medium text-[#ebecef]">Privacy notice</p>
             <p className="mt-1">
-              This interface never persists MRI data in browser storage. Files
-              are kept only for the active session and are cleared when the
-              workflow is reset or the page unmounts.
+              The browser does not store your MRI file. The backend stores the
+                uploaded file and assessment record for processing; follow your
+                deployment’s retention and deletion policy.
             </p>
           </div>
         </div>
@@ -366,8 +388,9 @@ export const MRIUploader: React.FC = () => {
           <div>
             <p className="font-medium text-[#8ef0dd]">Assessment submitted</p>
             <p className="mt-1">
-              The MRI was accepted and the processing pipeline completed successfully.
-              The result is now ready for review.
+              The MRI was accepted and the assessment was queued. Results will
+              appear when processing is available; the uploaded scan can be
+              reviewed in the MRI viewer.
             </p>
           </div>
         </div>

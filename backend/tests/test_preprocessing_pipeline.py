@@ -14,6 +14,7 @@ from app.data_pipeline.preprocessing import (
     build_subject_split_manifest,
     load_preprocessing_config,
     preprocess_image,
+    preprocess_image_with_metadata,
     save_preprocessing_config,
 )
 
@@ -95,6 +96,23 @@ def test_preprocessing_rejects_invalid_numpy_shapes_and_corrupted_files(tmp_path
 
     with pytest.raises(ValueError):
         PreprocessingConfig(target_shape=(8, 8))
+
+
+def test_preprocessing_rejects_multi_volume_nifti_and_reports_orientation(tmp_path: Path) -> None:
+    multi_volume_path = tmp_path / 'multi-volume.nii.gz'
+    nib.save(
+        nib.Nifti1Image(np.ones((8, 8, 8, 2), dtype=np.float32), np.eye(4)),
+        multi_volume_path,
+    )
+    config = PreprocessingConfig(target_shape=(8, 8, 8))
+
+    with pytest.raises(ValueError, match='multiple volumes'):
+        preprocess_image(multi_volume_path, config)
+
+    source = tmp_path / 'single-volume.nii.gz'
+    _write_nifti(source, (8, 8, 8))
+    _, metadata = preprocess_image_with_metadata(source, config)
+    assert metadata['orientation'] == 'RAS'
 
 
 def test_subject_split_manifest_is_leakage_free_across_partitions(tmp_path: Path) -> None:

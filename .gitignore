@@ -12,6 +12,13 @@ venv/
 .env.*
 !.env.example
 
+# Local datasets and generated artifacts
+data/raw/
+data/derived/
+backend/storage/
+storage/
+artifacts/kaggle-model/
+
 # Local databases
 *.db
 *.sqlite3

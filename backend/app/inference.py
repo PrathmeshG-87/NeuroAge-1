@@ -11,6 +11,7 @@ import nibabel as nib
 import numpy as np
 
 from app.core.config import settings
+from app.data_pipeline.baseline_regression import extract_intensity_features
 from app.data_pipeline.preprocessing import PreprocessingConfig, preprocess_image
 
 
@@ -268,12 +269,20 @@ def predict_brain_age(
         raise ModelNotReadyError('Model is not initialized.')
     validated = validate_input(input_path)
     try:
-        processed = preprocess_mri(validated, cfg)
-    except PreprocessingError as exc:
-        raise PredictionError('Prediction failed during preprocessing.') from exc
-    try:
-        prediction = model.predict(processed.reshape(-1)) if processed.size == 0 else model.predict(processed)
+        if isinstance(validated, str):
+            image = nib.load(validated)
+            source_volume = np.asarray(image.get_fdata(dtype=np.float32), dtype=np.float32)
+        else:
+            source_volume = np.asarray(validated, dtype=np.float32)
+        features = extract_intensity_features(source_volume)
+        if features.size != model.coefficients.size:
+            raise PredictionError(
+                'The model feature schema does not match the MRI intensity feature extractor.'
+            )
+        prediction = model.predict(features)
         predicted_value = float(np.asarray(prediction, dtype=np.float64).reshape(-1)[0])
+    except PredictionError:
+        raise
     except Exception as exc:
         raise PredictionError('Inference failed for the supplied MRI input.') from exc
     if not math.isfinite(predicted_value):

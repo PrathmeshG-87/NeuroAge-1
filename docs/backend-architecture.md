@@ -2,21 +2,21 @@
 
 ## 1. Repository status snapshot
 
-The repository now contains a working FastAPI backend service under `app/` with structured configuration, SQLAlchemy models, Alembic migrations, MRI validation, report generation, and protected route access checks.
+The repository now contains a working FastAPI backend service under `backend/app/` with structured configuration, SQLAlchemy models, Alembic migrations, MRI validation, report generation, and protected route access checks.
 
 This document reflects the implemented state rather than the original greenfield assumption.
 
 ### Current backend scope
 
-- FastAPI ASGI app in `app/main.py`
-- Versioned API router in `app/api/v1/router.py`
-- Configuration and environment handling in `app/core/config.py`
-- Security checks and rate limiting in `app/core/security.py`
-- MRI upload validation in `app/services/mri_ingestion.py`
-- ML contract/service layer in `app/services/ml_inference.py`
-- PDF report generation in `app/services/report_service.py`
-- SQLAlchemy schema and Alembic migrations under `app/db/` and `alembic/`
-- Automated regression coverage under `tests/`
+- FastAPI ASGI app in `backend/app/main.py`
+- Versioned API router in `backend/app/api/v1/router.py`
+- Configuration and environment handling in `backend/app/core/config.py`
+- Security checks and rate limiting in `backend/app/core/security.py`
+- MRI upload validation in `backend/app/services/mri_ingestion.py`
+- ML contract/service layer in `backend/app/services/ml_inference.py`
+- PDF report generation in `backend/app/services/report_service.py`
+- SQLAlchemy schema and Alembic migrations under `backend/app/db/` and `backend/alembic/`
+- Automated regression coverage under `backend/tests/`
 
 ### Important caveat
 
@@ -159,7 +159,7 @@ backend/
   pyproject.toml
 ```
 
-This layout is proposed because the repository does not currently contain an implementation. It preserves the required separation without duplicating frontend logic.
+The implemented backend source, migrations, scripts, tests, dependencies, and container configuration are grouped under `backend/`. The conceptual layout above is an architectural reference; modules shown there that are not present in the source tree are not yet implemented.
 
 ---
 

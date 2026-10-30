@@ -4,22 +4,27 @@ const ASSESSMENT_TOKENS_KEY = 'neuroage.assessment.tokens'
 
 const readAssessmentTokens = () => {
   try {
-    const rawValue = window.localStorage.getItem(ASSESSMENT_TOKENS_KEY)
+    const rawValue = window.sessionStorage.getItem(ASSESSMENT_TOKENS_KEY)
     if (!rawValue) {
       return {} as Record<string, string>
     }
     const parsed = JSON.parse(rawValue)
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {}
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, string>)
+      : {}
   } catch {
     return {} as Record<string, string>
   }
 }
 
 const persistAssessmentTokens = (tokens: Record<string, string>) => {
-  window.localStorage.setItem(ASSESSMENT_TOKENS_KEY, JSON.stringify(tokens))
+  window.sessionStorage.setItem(ASSESSMENT_TOKENS_KEY, JSON.stringify(tokens))
 }
 
-export const rememberAssessmentToken = (assessmentId: string, accessToken: string) => {
+export const rememberAssessmentToken = (
+  assessmentId: string,
+  accessToken: string,
+) => {
   if (!assessmentId || !accessToken) {
     return
   }
@@ -28,13 +33,18 @@ export const rememberAssessmentToken = (assessmentId: string, accessToken: strin
   persistAssessmentTokens(tokens)
 }
 
+export const getRememberedAssessmentTokens = () => readAssessmentTokens()
+
 const getAssessmentTokenForPath = (path: string) => {
-  const match = path.match(/\/api\/v1\/(?:assessments|reports)\/(?:[^/?]+)(?:\/download)?$/)
+  const pathWithoutQuery = path.split('?', 1)[0]
+  const match = pathWithoutQuery.match(
+    /\/api\/v1\/(?:assessments|reports)\/([^/?]+)(?:\/(?:download|status|slice|mri\/(?:slice|volume)))?\/?$/,
+  )
   if (!match) {
     return null
   }
 
-  const assessmentId = path.split('/').filter(Boolean).at(-1)
+  const assessmentId = match[1]
   if (!assessmentId) {
     return null
   }
@@ -83,6 +93,9 @@ const parseErrorBody = async (response: Response) => {
     const contentType = response.headers.get('content-type') ?? ''
     if (isJsonPayload(contentType)) {
       const json = await response.json()
+      if (typeof json?.error?.message === 'string') {
+        return json.error.message
+      }
       if (typeof json?.detail === 'string') {
         return json.detail
       }
@@ -131,10 +144,7 @@ export async function apiRequest<T>(
       headers: {
         Accept: 'application/json',
         ...(assessmentToken
-          ? {
-              'X-Assessment-Token': assessmentToken,
-              Authorization: `Bearer neuroage-assessment:${assessmentToken}`,
-            }
+          ? { 'X-Assessment-Token': assessmentToken }
           : {}),
         ...(options.headers ?? {}),
       },
@@ -142,11 +152,11 @@ export async function apiRequest<T>(
 
     if (!response.ok) {
       const reason = await parseErrorBody(response)
-      const isSessionExpired =
+      const isAccessDenied =
         response.status === 401 || response.status === 403
       throw new ApiClientError(reason, {
         status: response.status,
-        code: isSessionExpired ? 'SESSION_EXPIRED' : 'HTTP_ERROR',
+        code: isAccessDenied ? 'ACCESS_DENIED' : 'HTTP_ERROR',
         retryable: response.status >= 500 || response.status === 429,
       })
     }

@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
+import app.db.models
 from app.db.models import Assessment, AuditEvent, ModelVersion, Report, User
 from app.db.repositories.assessment_repository import AssessmentRepository
 
@@ -90,3 +91,11 @@ def test_assessment_repository_tracks_status_and_listing() -> None:
     assert len(by_status) == 1
     assert by_status[0].status == 'completed'
     assert by_status[0].output_payload['predicted_age'] == 63.4
+def test_model_modules_are_registered_in_metadata_for_migrations() -> None:
+    assert {
+        'assessments',
+        'audit_events',
+        'model_versions',
+        'reports',
+        'users',
+    }.issubset(Base.metadata.tables)

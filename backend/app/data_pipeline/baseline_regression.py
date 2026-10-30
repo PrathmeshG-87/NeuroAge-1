@@ -116,13 +116,14 @@ def _infer_subject_id(path: Path) -> str:
     return _normalise_subject_id(path.parent.name)
 
 
-def _extract_intensity_features(image_path: str | Path) -> np.ndarray:
-    volume = nib.load(str(image_path)).get_fdata(dtype=np.float32)
+def extract_intensity_features(volume: np.ndarray) -> np.ndarray:
     finite = np.asarray(volume, dtype=np.float32)
-    if finite.size == 0:
-        raise ValueError(f'Image has no voxels: {image_path}')
+    if finite.ndim == 4 and finite.shape[-1] == 1:
+        finite = finite[..., 0]
+    if finite.ndim != 3 or finite.size == 0:
+        raise ValueError('MRI volume must be a non-empty 3D image for intensity feature extraction.')
     if not np.isfinite(finite).all():
-        raise ValueError(f'Image contains non-finite values: {image_path}')
+        raise ValueError('MRI volume contains non-finite values.')
     values = finite.reshape(-1)
     return np.asarray(
         [
@@ -137,6 +138,14 @@ def _extract_intensity_features(image_path: str | Path) -> np.ndarray:
         ],
         dtype=np.float64,
     )
+
+
+def _extract_intensity_features(image_path: str | Path) -> np.ndarray:
+    volume = nib.load(str(image_path)).get_fdata(dtype=np.float32)
+    try:
+        return extract_intensity_features(volume)
+    except ValueError as exc:
+        raise ValueError(f'Invalid MRI volume: {image_path}') from exc
 
 
 def _split_subjects(subject_ids: list[str], *, train_fraction: float, val_fraction: float, seed: int) -> tuple[list[str], list[str], list[str]]:
@@ -276,15 +285,15 @@ def evaluate_model(model: Any, features: np.ndarray, labels: np.ndarray) -> dict
     rmse = float(np.sqrt(np.mean(np.square(residuals))))
     labels_array = np.asarray(labels, dtype=np.float64)
     predictions_array = np.asarray(predictions, dtype=np.float64)
-    if len(labels_array) < 2:
-        pearson_r = 1.0
+    if len(labels_array) < 2 or np.std(predictions_array) <= 1e-12 or np.std(labels_array) <= 1e-12:
+        pearson_r = None
     else:
         with np.errstate(divide='ignore', invalid='ignore'):
             correlation = np.corrcoef(predictions_array, labels_array)[0, 1]
-        if not np.isfinite(correlation):
-            pearson_r = 1.0 if np.allclose(predictions_array, labels_array) else 0.0
-        else:
+        if np.isfinite(correlation):
             pearson_r = float(np.clip(correlation, -1.0, 1.0))
+        else:
+            pearson_r = None
     return {
         'mae': mae,
         'rmse': rmse,
@@ -336,21 +345,21 @@ def _fit_linear_bias_correction(ages: np.ndarray, predictions: np.ndarray, label
     }
 
 
-def _calculate_prediction_metrics(predictions: np.ndarray, labels: np.ndarray) -> dict[str, float]:
+def _calculate_prediction_metrics(predictions: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
     predictions_array = np.asarray(predictions, dtype=np.float64)
     labels_array = np.asarray(labels, dtype=np.float64)
     residuals = labels_array - predictions_array
     mae = float(np.mean(np.abs(residuals)))
     rmse = float(np.sqrt(np.mean(np.square(residuals))))
-    if len(labels_array) < 2:
-        pearson_r = 1.0
+    if len(labels_array) < 2 or np.std(predictions_array) <= 1e-12 or np.std(labels_array) <= 1e-12:
+        pearson_r = None
     else:
         with np.errstate(divide='ignore', invalid='ignore'):
             correlation = np.corrcoef(predictions_array, labels_array)[0, 1]
-        if not np.isfinite(correlation):
-            pearson_r = 1.0 if np.allclose(predictions_array, labels_array) else 0.0
-        else:
+        if np.isfinite(correlation):
             pearson_r = float(np.clip(correlation, -1.0, 1.0))
+        else:
+            pearson_r = None
     return {
         'mae': mae,
         'rmse': rmse,
@@ -403,37 +412,46 @@ def build_model_evaluation_report(
         raise ValueError('A training result containing a fitted model is required.')
 
     model = training_result['model']
-    full_labels = np.asarray(training_result.get('labels', []), dtype=np.float64)
-    labels = np.asarray(training_result.get('test_labels', full_labels), dtype=np.float64)
-    if labels.size == 0:
-        labels = full_labels.copy()
-    if labels.size < 2 and full_labels.size >= 2:
-        labels = full_labels.copy()
+    required_fields = (
+        'test_features',
+        'test_labels',
+        'test_ages',
+        'train_features',
+        'train_labels',
+        'train_ages',
+    )
+    if any(field not in training_result for field in required_fields):
+        raise ValueError('A held-out test split and training split are required for evaluation.')
 
-    feature_matrix = np.asarray(training_result.get('test_features', training_result.get('feature_matrix', [])), dtype=np.float64)
-    if feature_matrix.size == 0:
-        feature_matrix = np.asarray(training_result.get('feature_matrix', []), dtype=np.float64)
-    if feature_matrix.ndim == 1:
-        feature_matrix = feature_matrix.reshape(-1, 1)
-    if feature_matrix.shape[0] != labels.size:
-        feature_matrix = np.asarray(training_result.get('feature_matrix', []), dtype=np.float64)
-        if feature_matrix.ndim == 1:
-            feature_matrix = feature_matrix.reshape(-1, 1)
-
-    ages = np.asarray(training_result.get('test_ages', full_labels), dtype=np.float64)
-    if ages.size == 0:
-        ages = full_labels.copy()
-    if ages.size != labels.size:
-        ages = full_labels.copy()[: labels.size]
-    if ages.size == 0:
-        ages = labels.copy()
+    labels = np.asarray(training_result['test_labels'], dtype=np.float64).reshape(-1)
+    feature_matrix = np.asarray(training_result['test_features'], dtype=np.float64)
+    ages = np.asarray(training_result['test_ages'], dtype=np.float64).reshape(-1)
+    train_labels = np.asarray(training_result['train_labels'], dtype=np.float64).reshape(-1)
+    train_features = np.asarray(training_result['train_features'], dtype=np.float64)
+    train_ages = np.asarray(training_result['train_ages'], dtype=np.float64).reshape(-1)
+    if (
+        labels.size < 2
+        or feature_matrix.ndim != 2
+        or feature_matrix.shape[0] != labels.size
+        or ages.size != labels.size
+        or train_features.ndim != 2
+        or train_features.shape[0] != train_labels.size
+        or train_ages.size != train_labels.size
+        or train_labels.size < 2
+    ):
+        raise ValueError(
+            'Training and held-out test arrays must be non-empty, aligned, and contain at least two samples.'
+        )
 
     predictions = _predict(model, feature_matrix)
     residuals = labels - predictions
 
     overall = _calculate_prediction_metrics(predictions, labels)
-    raw_bias = _fit_linear_bias_correction(ages, predictions, labels)
-    corrected_predictions = raw_bias['corrected_predictions']
+    train_predictions = _predict(model, train_features)
+    fitted_bias = _fit_linear_bias_correction(train_ages, train_predictions, train_labels)
+    corrected_predictions = predictions - (
+        fitted_bias['intercept'] + fitted_bias['slope'] * ages
+    )
     corrected_metrics = _calculate_prediction_metrics(corrected_predictions, labels)
 
     if age_bins is None:
@@ -459,7 +477,7 @@ def build_model_evaluation_report(
     raw_vs_corrected = {
         'raw': overall,
         'corrected': corrected_metrics,
-        'bias_corrected': bool(abs(raw_bias['slope']) > 1e-8),
+        'bias_corrected': bool(abs(fitted_bias['slope']) > 1e-8),
     }
 
     limitations = [
@@ -479,9 +497,11 @@ def build_model_evaluation_report(
         'age_group_metrics': age_group_metrics,
         'bias_analysis': {
             'method': 'linear_age_bias_regression',
-            'intercept': raw_bias['intercept'],
-            'slope': raw_bias['slope'],
-            'correction_formula': raw_bias['correction_formula'],
+            'intercept': fitted_bias['intercept'],
+            'slope': fitted_bias['slope'],
+            'correction_formula': fitted_bias['correction_formula'],
+            'fit_split': 'training',
+            'fit_sample_count': int(train_labels.size),
             'summary': 'A positive slope means the model increasingly overestimates age as chronological age rises; a negative slope means the opposite.',
         },
         'raw_vs_corrected': raw_vs_corrected,
@@ -516,6 +536,7 @@ __all__ = [
     'build_model_evaluation_report',
     'compute_age_group_metrics',
     'evaluate_model',
+    'extract_intensity_features',
     'fit_baseline_model',
     'save_model_bundle',
 ]

@@ -40,7 +40,7 @@ All exclusion logic should be documented in the derived dataset summary, not jus
 
 ## Preprocessing configuration
 
-The canonical preprocessing configuration used by the project is defined by the `PreprocessingConfig` model in [app/data_pipeline/preprocessing.py](../app/data_pipeline/preprocessing.py):
+The canonical preprocessing configuration used by the project is defined by the `PreprocessingConfig` model in [preprocessing.py](../backend/app/data_pipeline/preprocessing.py):
 
 - target_shape: `(128, 128, 128)` by default
 - orientation: `RAS`

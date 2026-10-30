@@ -12,11 +12,19 @@ from starlette import status
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    details = [
+        {
+            key: value
+            for key, value in error.items()
+            if key not in {'ctx', 'input'}
+        }
+        for error in exc.errors()
+    ]
     payload = {
         'error': {
             'code': 'validation_error',
             'message': 'Request validation failed.',
-            'details': exc.errors(),
+            'details': details,
             'request_id': str(uuid.uuid4()),
         }
     }

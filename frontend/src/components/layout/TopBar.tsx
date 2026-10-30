@@ -1,21 +1,14 @@
 import React from 'react'
-import { Bell, ChevronRight, Menu, Search, ShieldCheck } from 'lucide-react'
+import { ChevronRight, Menu } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
-import { Badge } from '@/components/ui/Badge'
 
 const routeLabels: Record<string, string> = {
-  '/dashboard': 'Dashboard',
   '/assessment': 'Assessment',
   '/assessments': 'Assessments',
   '/reports': 'Reports',
   '/progress': 'Progress',
   '/methodology': 'Methodology',
   '/settings': 'Settings',
-  '/signin': 'Sign in',
-  '/register': 'Register',
-  '/session-expired': 'Session expired',
-  '/unauthorized': 'Unauthorized',
-  '/forbidden': 'Forbidden',
 }
 
 interface TopBarProps {
@@ -32,7 +25,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
     .map((segment, index, all) => {
       const path = `/${all.slice(0, index + 1).join('/')}`
       return {
-        label: routeLabels[path] ?? segment.replace(/-/g, ' '),
+        label:
+          routeLabels[path] ??
+          (all[index - 1] === 'assessments'
+            ? 'Assessment results'
+            : segment.replace(/-/g, ' ')),
         path,
       }
     })
@@ -65,27 +62,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2 rounded-lg border border-white/10 bg-[#0a0b0e] px-3 py-2 text-xs text-[#8d909c] md:flex">
-            <Search className="h-3.5 w-3.5" />
-            <span>Search subject ID or report</span>
-          </div>
-
-          <Badge variant="teal" className="hidden gap-1.5 sm:inline-flex">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Anonymous assessment access</span>
-          </Badge>
-
-          <div className="flex items-center gap-2">
-            <div className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-[#0a0b0e] px-3 py-2 text-xs font-medium text-[#ebecef]">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#5eead4]/12 text-[10px] text-[#5eead4]">
-                A
-              </span>
-              <span className="hidden sm:inline">Ready</span>
-            </div>
-            <Bell className="h-3.5 w-3.5 text-[#8d909c]" />
-          </div>
-        </div>
       </div>
     </header>
   )

@@ -17,6 +17,7 @@ export type AssessmentStatus =
 
 export interface AssessmentSubmissionRequest {
   file: File
+  subjectName: string
   chronologicalAge?: number
   subjectId?: string
 }
@@ -40,7 +41,9 @@ export interface AssessmentServiceError extends Error {
 
 export interface AssessmentResult {
   assessmentId: string
+  subjectName: string
   status: AssessmentStatus
+  message: string
   chronologicalAge: number | null
   predictedBrainAge: number | null
   brainAgeDifference: number | null
@@ -55,6 +58,9 @@ export interface AssessmentResult {
     available: boolean
     message?: string
     availableViews?: Array<'axial' | 'coronal' | 'sagittal'>
+    sliceEndpoint?: string
+    volumeEndpoint?: string
+    dimensions?: [number, number, number]
   }
   modelLimitations: string[]
   disclaimer: string
@@ -84,74 +90,18 @@ export const ASSESSMENT_BACKEND_CONTRACT = {
     file: 'MRI volume (.nii or .nii.gz)',
     chronologicalAge: 'number | undefined',
     subjectId: 'string | undefined',
+    subjectName: 'string',
   },
   response: {
     assessmentId: 'string',
     status: 'accepted | queued | processing | failed',
     message: 'string',
     createdAt: 'ISO datetime string',
+    accessToken: 'per-assessment capability token used for protected result, MRI, and report access',
   },
   notes:
-    'The backend team should confirm the exact status and result routes before production deployment. This frontend keeps the service boundary typed and sealed until then.',
+    'Implemented by the local FastAPI backend. Assessment-specific capability tokens are stored in session storage; no user account is required for the standard assessment workflow.',
 } as const
-
-const createDemoPreviewDataUrl = () => {
-  const size = 240
-  const box = Array.from({ length: size }, (_, y) => {
-    const cells: string[] = []
-    for (let x = 0; x < size; x += 1) {
-      const centerX = x - size / 2
-      const centerY = y - size / 2
-      const radius = Math.sqrt(centerX * centerX + centerY * centerY)
-      const wave = Math.sin((x + y) / 12) * 0.5 + 0.5
-      const ring = Math.sin(radius / 7) * 0.5 + 0.5
-      const intensity = Math.min(255, Math.max(0, Math.round((wave * 0.5 + ring * 0.5) * 255)))
-      cells.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="rgb(${intensity},${intensity},${intensity})" />`)
-    }
-    return cells.join('')
-  }).join('')
-
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
-      <rect width="240" height="240" fill="#07080b"/>
-      ${box}
-    </svg>
-  `
-
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-}
-
-export const DEMO_ASSESSMENT_RESULT: AssessmentResult = {
-  assessmentId: 'AS-2408-014',
-  status: 'completed',
-  chronologicalAge: 62,
-  predictedBrainAge: 67.2,
-  brainAgeDifference: 5.2,
-  uncertaintyInterval: [64.1, 69.8],
-  modelName: 'ResNet3D-Regression v1',
-  assessmentDate: '2026-10-18T09:35:00.000Z',
-  processingStatus: 'Completed',
-  preview: {
-    url: createDemoPreviewDataUrl(),
-    fileType: 'image',
-    available: true,
-    message: 'Generated MRI preview from the central slice of the uploaded volume.',
-    availableViews: ['axial'],
-  },
-  modelLimitations: [
-    'This estimate is exploratory and should not be treated as a medical diagnosis.',
-    'Performance depends on image quality, preprocessing, and scan acquisition settings.',
-    'Brain age estimates can vary across scanners and study populations.',
-  ],
-  disclaimer:
-    'The reported value reflects a research-oriented estimate from a structural MRI model and should be interpreted alongside clinical context and additional review.',
-}
-
-const resultCache = new Map<string, Promise<AssessmentResult>>()
-const statusCache = new Map<
-  string,
-  Promise<{ assessmentId: string; status: string; message?: string }>
->()
 
 const normalizeStatus = (value: string | undefined): AssessmentStatus => {
   const normalized = (value ?? '').toLowerCase()
@@ -165,33 +115,47 @@ const normalizeStatus = (value: string | undefined): AssessmentStatus => {
 
 const normalizeResult = (payload: any): AssessmentResult => ({
   assessmentId: String(
-    payload.assessmentId ?? payload.id ?? 'unknown-assessment',
+    payload.assessmentId ??
+      payload.assessment_id ??
+      payload.id ??
+      'unknown-assessment',
   ),
+  subjectName: String(payload.subjectName ?? payload.subject_name ?? ''),
   status: normalizeStatus(payload.status ?? payload.processingStatus),
+  message: String(payload.message ?? 'Assessment result retrieved.'),
   chronologicalAge:
-    typeof payload.chronologicalAge === 'number'
-      ? payload.chronologicalAge
+    typeof (payload.chronologicalAge ?? payload.chronological_age) === 'number'
+      ? (payload.chronologicalAge ?? payload.chronological_age)
       : null,
   predictedBrainAge:
-    typeof payload.predictedBrainAge === 'number'
-      ? payload.predictedBrainAge
+    typeof (payload.predictedBrainAge ?? payload.predicted_brain_age) ===
+    'number'
+      ? (payload.predictedBrainAge ?? payload.predicted_brain_age)
       : null,
   brainAgeDifference:
-    typeof payload.brainAgeDifference === 'number'
-      ? payload.brainAgeDifference
+    typeof (payload.brainAgeDifference ?? payload.brain_age_difference) ===
+    'number'
+      ? (payload.brainAgeDifference ?? payload.brain_age_difference)
       : null,
-  uncertaintyInterval: Array.isArray(payload.uncertaintyInterval)
+  uncertaintyInterval: Array.isArray(
+    payload.uncertaintyInterval ?? payload.uncertainty_interval,
+  )
     ? [
-        Number(payload.uncertaintyInterval[0]),
-        Number(payload.uncertaintyInterval[1]),
+        Number(
+          (payload.uncertaintyInterval ?? payload.uncertainty_interval)[0],
+        ),
+        Number(
+          (payload.uncertaintyInterval ?? payload.uncertainty_interval)[1],
+        ),
       ]
     : null,
-  modelName: String(payload.modelName ?? 'Unknown model'),
+  modelName: String(payload.modelName ?? payload.model_name ?? 'Unknown model'),
   assessmentDate:
-    typeof payload.assessmentDate === 'string'
-      ? payload.assessmentDate
+    typeof (payload.assessmentDate ?? payload.assessment_date) === 'string'
+      ? (payload.assessmentDate ?? payload.assessment_date)
       : new Date().toISOString(),
   processingStatus: (payload.processingStatus ??
+    payload.processing_status ??
     String(payload.status ?? 'Queued')) as AssessmentResult['processingStatus'],
   preview: payload.preview ?? {
     available: false,
@@ -200,7 +164,9 @@ const normalizeResult = (payload: any): AssessmentResult => ({
   },
   modelLimitations: Array.isArray(payload.modelLimitations)
     ? payload.modelLimitations.map(String)
-    : [],
+    : Array.isArray(payload.model_limitations)
+      ? payload.model_limitations.map(String)
+      : [],
   disclaimer: String(
     payload.disclaimer ?? 'This output is intended for research use only.',
   ),
@@ -229,6 +195,9 @@ export const assessmentService: AssessmentService = {
     if (request.subjectId) {
       formData.append('subject_id', request.subjectId)
     }
+    if (request.subjectName) {
+      formData.append('subject_name', request.subjectName.trim())
+    }
 
     if (appConfig.isDemoMode) {
       onProgress?.({ phase: 'uploading', progress: 72 })
@@ -247,6 +216,7 @@ export const assessmentService: AssessmentService = {
     onProgress?.({ phase: 'uploading', progress: 65 })
     const response = await apiRequest<{
       assessmentId?: string
+      assessment_id?: string
       id?: string
       status?: string
       message?: string
@@ -257,7 +227,12 @@ export const assessmentService: AssessmentService = {
 
     const accessToken = response.accessToken ?? response.access_token
     const normalizedResponse: AssessmentSubmissionResponse = {
-      assessmentId: String(response.assessmentId ?? response.id ?? 'unknown'),
+      assessmentId: String(
+        response.assessmentId ??
+          response.assessment_id ??
+          response.id ??
+          'unknown',
+      ),
       status: normalizeStatus(response.status),
       message: String(response.message ?? 'Assessment accepted.'),
       createdAt: response.createdAt ?? new Date().toISOString(),
@@ -277,38 +252,28 @@ export const assessmentService: AssessmentService = {
       throw new Error('Assessment id is required to fetch status.')
     }
 
-    const cached = statusCache.get(assessmentId)
-    if (cached) {
-      return cached
+    if (appConfig.isDemoMode) {
+      return {
+        assessmentId,
+        status: 'completed',
+        message: 'Demo mode status only.',
+      }
     }
 
-    const pending = (async () => {
-      if (appConfig.isDemoMode) {
-        return {
-          assessmentId,
-          status: 'completed',
-          message: 'Demo mode status only.',
-        }
-      }
+    const response = await apiRequest<{
+      assessmentId?: string
+      id?: string
+      status?: string
+      message?: string
+    }>(`/api/v1/assessments/${assessmentId}/status`, { method: 'GET' })
 
-      const response = await apiRequest<{
-        assessmentId?: string
-        id?: string
-        status?: string
-        message?: string
-      }>(`/api/v1/assessments/${assessmentId}/status`, { method: 'GET' })
-
-      return {
-        assessmentId: String(
-          response.assessmentId ?? response.id ?? assessmentId,
-        ),
-        status: String(response.status ?? 'queued'),
-        message: response.message ?? 'Assessment status retrieved.',
-      }
-    })()
-
-    statusCache.set(assessmentId, pending)
-    return pending
+    return {
+      assessmentId: String(
+        response.assessmentId ?? response.id ?? assessmentId,
+      ),
+      status: String(response.status ?? 'queued'),
+      message: response.message ?? 'Assessment status retrieved.',
+    }
   },
 
   async fetchAssessmentResult(assessmentId) {
@@ -316,25 +281,17 @@ export const assessmentService: AssessmentService = {
       throw new Error('Assessment id is required to fetch a result.')
     }
 
-    const cached = resultCache.get(assessmentId)
-    if (cached) {
-      return cached
+    if (appConfig.isDemoMode) {
+      throw new Error(
+        'Demo mode has no MRI assessment records. Connect the backend to view an assessment.',
+      )
     }
 
-    const pending = (async () => {
-      if (appConfig.isDemoMode) {
-        return DEMO_ASSESSMENT_RESULT
-      }
-
-      const payload = await apiRequest<any>(
-        `/api/v1/assessments/${assessmentId}`,
-        { method: 'GET' },
-      )
-      return normalizeResult(payload)
-    })()
-
-    resultCache.set(assessmentId, pending)
-    return pending
+    const payload = await apiRequest<any>(
+      `/api/v1/assessments/${assessmentId}`,
+      { method: 'GET' },
+    )
+    return normalizeResult(payload)
   },
 
   async waitForCompletion(assessmentId, options = {}) {

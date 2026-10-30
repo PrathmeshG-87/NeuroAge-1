@@ -31,7 +31,7 @@ Dataset: approved external cohort only
 
 ## Baseline architecture and hyperparameters
 
-The repository’s baseline model is a regularized intensity-based ridge regression over extracted MRI summary features, not a deep-learning model. The core implementation is in [app/data_pipeline/baseline_regression.py](../app/data_pipeline/baseline_regression.py).
+The repository’s baseline model is a regularized intensity-based ridge regression over extracted MRI summary features, not a deep-learning model. The core implementation is in [baseline_regression.py](../backend/app/data_pipeline/baseline_regression.py).
 
 Current settings:
 

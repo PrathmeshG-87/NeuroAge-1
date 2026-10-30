@@ -1,5 +1,8 @@
 import { appConfig } from '@/config/env'
-import { apiRequest } from '@/services/apiClient'
+import {
+  apiRequest,
+  getRememberedAssessmentTokens,
+} from '@/services/apiClient'
 
 export type ReportStatus = 'completed' | 'processing' | 'failed' | 'unavailable'
 
@@ -7,7 +10,7 @@ export interface ReportRecord {
   id: string
   assessmentId: string
   title: string
-  generatedAt: string
+  generatedAt: string | null
   status: ReportStatus
   summary?: string
   fileUrl?: string | null
@@ -17,16 +20,17 @@ export interface ReportRecord {
 export interface AssessmentHistoryEntry {
   assessmentId: string
   assessmentDate: string
-  status: 'Completed' | 'Processing' | 'Failed' | 'Unavailable'
+  status: 'Queued' | 'Completed' | 'Processing' | 'Failed' | 'Unavailable'
   predictedBrainAge: number | null
   brainAgeDifference: number | null
   subjectId?: string | null
+  subjectName?: string | null
 }
 
 export const REPORT_BACKEND_CONTRACT = {
   listEndpoint: '/api/v1/reports',
   downloadEndpoint: '/api/v1/reports/:assessmentId/download',
-  auth: 'Authorization header required by backend; never store secrets in frontend environment variables.',
+  auth: 'Per-assessment capability token is sent in X-Assessment-Token for protected resources.',
   response: {
     id: 'string',
     assessmentId: 'string',
@@ -38,7 +42,7 @@ export const REPORT_BACKEND_CONTRACT = {
     format: 'pdf',
   },
   notes:
-    'The backend team should confirm the actual authorization and report-generation route before production deployment. This client keeps the contract typed and deliberately separated from demo data.',
+    'Implemented by the local FastAPI backend. Report download and metadata requests are scoped to saved assessment capability tokens.',
 } as const
 
 export const MOCK_REPORTS: ReportRecord[] = [
@@ -49,7 +53,7 @@ export const MOCK_REPORTS: ReportRecord[] = [
     generatedAt: '2026-10-18T09:35:00.000Z',
     status: 'completed',
     summary: 'Final research summary for AS-2408-014.',
-    fileUrl: 'https://example.invalid/report/AS-2408-014.pdf',
+    fileUrl: null,
     format: 'pdf',
   },
   {
@@ -110,37 +114,64 @@ export const MOCK_HISTORY: AssessmentHistoryEntry[] = [
 ]
 
 const normalizeReport = (report: any): ReportRecord => ({
-  id: String(report.id ?? report.assessmentId ?? 'report-unknown'),
+  id: String(
+    report.id ?? report.assessmentId ?? report.assessment_id ?? 'report-unknown',
+  ),
   assessmentId: String(
-    report.assessmentId ?? report.id ?? 'unknown-assessment',
+    report.assessmentId ??
+      report.assessment_id ??
+      report.id ??
+      'unknown-assessment',
   ),
   title: String(report.title ?? 'Brain aging summary report'),
   generatedAt:
-    typeof report.generatedAt === 'string'
-      ? report.generatedAt
-      : new Date().toISOString(),
+    typeof (report.generatedAt ?? report.generated_at) === 'string'
+      ? (report.generatedAt ?? report.generated_at)
+      : null,
   status: (report.status ?? 'unavailable') as ReportStatus,
   summary: typeof report.summary === 'string' ? report.summary : undefined,
-  fileUrl: typeof report.fileUrl === 'string' ? report.fileUrl : null,
+  fileUrl:
+    typeof (report.fileUrl ?? report.file_url) === 'string'
+      ? (report.fileUrl ?? report.file_url)
+      : null,
   format: report.format === 'pdf' ? 'pdf' : 'pdf',
 })
 
 const normalizeHistory = (entry: any): AssessmentHistoryEntry => ({
-  assessmentId: String(entry.assessmentId ?? entry.id ?? 'unknown-assessment'),
+  assessmentId: String(
+    entry.assessmentId ??
+      entry.assessment_id ??
+      entry.id ??
+      'unknown-assessment',
+  ),
   assessmentDate:
-    typeof entry.assessmentDate === 'string'
-      ? entry.assessmentDate
+    typeof (entry.assessmentDate ?? entry.assessment_date) === 'string'
+      ? (entry.assessmentDate ?? entry.assessment_date)
       : new Date().toISOString(),
-  status: (entry.status ?? 'Unavailable') as AssessmentHistoryEntry['status'],
+  status: (() => {
+    const status = String(entry.status ?? '').toLowerCase()
+    if (status === 'queued' || status === 'accepted') return 'Queued'
+    if (status === 'completed' || status === 'success') return 'Completed'
+    if (status === 'processing' || status === 'running') return 'Processing'
+    if (status === 'failed' || status === 'error') return 'Failed'
+    return 'Unavailable'
+  })(),
   predictedBrainAge:
-    typeof entry.predictedBrainAge === 'number'
-      ? entry.predictedBrainAge
+    typeof (entry.predictedBrainAge ?? entry.predicted_brain_age) === 'number'
+      ? (entry.predictedBrainAge ?? entry.predicted_brain_age)
       : null,
   brainAgeDifference:
-    typeof entry.brainAgeDifference === 'number'
-      ? entry.brainAgeDifference
+    typeof (entry.brainAgeDifference ?? entry.brain_age_difference) === 'number'
+      ? (entry.brainAgeDifference ?? entry.brain_age_difference)
       : null,
-  subjectId: typeof entry.subjectId === 'string' ? entry.subjectId : null,
+  subjectId:
+    typeof (entry.subjectId ?? entry.subject_id) === 'string'
+      ? (entry.subjectId ?? entry.subject_id)
+      : null,
+  subjectName:
+    typeof (entry.subjectName ?? entry.subject_name) === 'string'
+      ? (entry.subjectName ?? entry.subject_name)
+      : null,
 })
 
 export const reportService = {
@@ -150,32 +181,51 @@ export const reportService = {
       return MOCK_REPORTS
     }
 
-    const response = await apiRequest<any>('/api/v1/reports', { method: 'GET' })
-    const items = Array.isArray(response)
-      ? response
-      : Array.isArray(response.items)
-        ? response.items
-        : []
-    return items.map(normalizeReport)
+    const assessmentTokens = Object.entries(getRememberedAssessmentTokens())
+    if (assessmentTokens.length === 0) {
+      const response = await apiRequest<any>('/api/v1/reports', {
+        method: 'GET',
+      })
+      const items = Array.isArray(response)
+        ? response
+        : Array.isArray(response.items)
+          ? response.items
+          : []
+      return items.map(normalizeReport)
+    }
+
+    const results = await Promise.allSettled(
+      assessmentTokens.map(([assessmentId]) =>
+        apiRequest<any>(`/api/v1/reports/${encodeURIComponent(assessmentId)}`, {
+          method: 'GET',
+        }),
+      ),
+    )
+    const reports = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [normalizeReport(result.value)] : [],
+    )
+    if (reports.length === 0 && results.some((result) => result.status === 'rejected')) {
+      throw new Error('Unable to load reports for the saved assessments.')
+    }
+    return reports
   },
 
   async downloadReport(
     assessmentId: string,
-  ): Promise<{ ok: true; url: string; fileName: string }> {
+  ): Promise<{ blob: Blob; fileName: string }> {
     if (appConfig.isDemoMode) {
       const report = MOCK_REPORTS.find(
         (item) => item.assessmentId === assessmentId,
       )
-      if (!report || report.status !== 'completed' || !report.fileUrl) {
+      if (!report || report.status !== 'completed') {
         throw new Error(
           'This report is not available for download yet. Please check the report status and try again later.',
         )
       }
 
       return {
-        ok: true,
-        url: report.fileUrl,
-        fileName: `${report.assessmentId}-brain-age-report.pdf`,
+        blob: createDemoReportBlob(),
+        fileName: 'neuroage-brain-age-report.pdf',
       }
     }
 
@@ -194,12 +244,51 @@ export const reportService = {
       throw new Error('The report endpoint returned an invalid file payload.')
     }
 
-    return {
-      ok: true,
-      url: window.URL.createObjectURL(blob),
-      fileName: `${assessmentId}-brain-age-report.pdf`,
-    }
+    return { blob, fileName: 'neuroage-brain-age-report.pdf' }
   },
+}
+
+const createDemoReportBlob = (): Blob => {
+  const escapePdfText = (value: string) =>
+    value.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)')
+  const lines = [
+    'NeuroAge demo report',
+    'DEMO ONLY - NOT A REAL MRI ASSESSMENT',
+    'No clinical result or prediction is included in this demo document.',
+    'For research and software demonstration only; not for medical use.',
+  ]
+  const textStream = [
+    'BT',
+    '/F1 12 Tf',
+    '50 750 Td',
+    ...lines.flatMap((line, index) => [
+      `${index === 0 ? '' : '0 -24 Td'} (${escapePdfText(line)}) Tj`,
+    ]),
+    'ET',
+  ].join('\n')
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${new TextEncoder().encode(textStream).length} >>\nstream\n${textStream}\nendstream`,
+  ]
+
+  let document = '%PDF-1.4\n'
+  const offsets = [0]
+  for (const [index, object] of objects.entries()) {
+    offsets.push(new TextEncoder().encode(document).length)
+    document += `${index + 1} 0 obj\n${object}\nendobj\n`
+  }
+
+  const crossReferenceOffset = new TextEncoder().encode(document).length
+  document += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  document += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('')
+  document += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${crossReferenceOffset}\n%%EOF`
+  return new Blob([document], { type: 'application/pdf' })
 }
 
 export const historyService = {
@@ -207,6 +296,31 @@ export const historyService = {
     if (appConfig.isDemoMode) {
       await new Promise((resolve) => window.setTimeout(resolve, 300))
       return MOCK_HISTORY
+    }
+
+    const savedAssessmentIds = Object.keys(getRememberedAssessmentTokens())
+    if (savedAssessmentIds.length > 0) {
+      const results = await Promise.allSettled(
+        savedAssessmentIds.map((assessmentId) =>
+          apiRequest<any>(
+            `/api/v1/assessments/${encodeURIComponent(assessmentId)}`,
+            { method: 'GET' },
+          ),
+        ),
+      )
+      const history = results.flatMap((result) =>
+        result.status === 'fulfilled'
+          ? [normalizeHistory(result.value)]
+          : [],
+      )
+      if (history.length === 0 && results.some((result) => result.status === 'rejected')) {
+        throw new Error('Unable to load history for the saved assessments.')
+      }
+      return history.sort(
+        (left, right) =>
+          new Date(right.assessmentDate).getTime() -
+          new Date(left.assessmentDate).getTime(),
+      )
     }
 
     const response = await apiRequest<any>('/api/v1/assessments', {

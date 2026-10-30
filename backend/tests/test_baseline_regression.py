@@ -44,8 +44,8 @@ def test_fit_baseline_model_and_evaluate_metrics(tmp_path: Path) -> None:
     config = BaselineRegressionConfig(
         dataset_root=raw_dir,
         metadata_path=metadata_path,
-        train_fraction=0.5,
-        val_fraction=0.25,
+        train_fraction=0.4,
+        val_fraction=0.2,
         seed=7,
     )
 
@@ -86,8 +86,8 @@ def test_build_model_evaluation_report_includes_bias_and_residual_summary(tmp_pa
     config = BaselineRegressionConfig(
         dataset_root=raw_dir,
         metadata_path=metadata_path,
-        train_fraction=0.5,
-        val_fraction=0.25,
+        train_fraction=0.4,
+        val_fraction=0.2,
         seed=7,
     )
 
@@ -104,7 +104,16 @@ def test_build_model_evaluation_report_includes_bias_and_residual_summary(tmp_pa
     assert 'bias_analysis' in report
     assert 'raw_vs_corrected' in report
     assert 'limitations' in report
-    assert report['overall']['n_samples'] == len(ages)
+    assert report['overall']['n_samples'] == len(training_result['test_labels'])
+    assert report['bias_analysis']['fit_split'] == 'training'
+    assert report['bias_analysis']['fit_sample_count'] == len(training_result['train_labels'])
     assert 'mae' in report['overall']
     assert 'rmse' in report['overall']
     assert 'pearson_r' in report['overall']
+
+
+def test_evaluation_report_requires_held_out_data_and_never_falls_back() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match='held-out test split'):
+        build_model_evaluation_report({'model': object(), 'labels': np.array([1.0, 2.0])})

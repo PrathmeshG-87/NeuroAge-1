@@ -10,6 +10,7 @@ const statusTone: Record<
   AssessmentHistoryEntry['status'],
   'teal' | 'neutral' | 'coral'
 > = {
+  Queued: 'neutral',
   Completed: 'teal',
   Processing: 'neutral',
   Failed: 'coral',
@@ -123,7 +124,7 @@ export const HistoryPage: React.FC = () => {
             <table className="w-full text-left text-xs font-mono">
               <thead className="border-b border-white/[0.08] bg-[#171921] text-[#8d909c] uppercase tracking-wider">
                 <tr>
-                  <th className="px-4 py-3">Assessment ID</th>
+                  <th className="px-4 py-3">Assessment</th>
                   <th className="px-4 py-3">Subject</th>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Predicted age</th>
@@ -139,7 +140,12 @@ export const HistoryPage: React.FC = () => {
                     className="hover:bg-white/[0.02] transition-colors"
                   >
                     <td className="px-4 py-3.5 font-semibold text-[#ebecef]">
-                      {record.assessmentId}
+                      <div>{record.subjectName || record.assessmentId}</div>
+                      {record.subjectName ? (
+                        <div className="mt-1 text-[10px] font-normal text-[#8d909c]">
+                          {record.assessmentId}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3.5 text-[#c6c9d2]">
                       {record.subjectId ?? 'Not available'}

@@ -12,18 +12,18 @@ This matrix distinguishes between components that are implemented, tested, place
 | Assessment service | Frontend | Implemented | [frontend/src/services/assessment.ts](../frontend/src/services/assessment.ts) | Partial | API contract is partly aligned but has route/field mismatches. |
 | Report service | Frontend | Implemented | [frontend/src/services/reports.ts](../frontend/src/services/reports.ts) | Partial | Demo mode is present; live API contract is not fully aligned. |
 | Model metrics UI | Frontend | Placeholder | [frontend/src/pages/ModelInfoPage.tsx](../frontend/src/pages/ModelInfoPage.tsx) | No | Displays values that are not backed by real repository metrics. |
-| FastAPI app factory | Backend | Implemented | [app/main.py](../app/main.py) | Yes | Healthy app structure exists. |
-| MRI validation endpoint | Backend | Implemented | [app/api/v1/router.py](../app/api/v1/router.py) | Yes | Validates supported NIfTI inputs and rejects invalid ones. |
-| Assessment creation endpoint | Backend | Implemented | [app/api/v1/router.py](../app/api/v1/router.py) | Yes | Accepts upload and creates queued assessment state. |
-| Assessment detail endpoint | Backend | Implemented | [app/api/v1/router.py](../app/api/v1/router.py) | Yes | Endpoint exists but not the same contract as the frontend expects. |
-| Report generation | Backend | Implemented | [app/services/report_service.py](../app/services/report_service.py) | Yes | Real PDF generation works for completed assessment payloads. |
-| Auth and ownership controls | Backend | Implemented | [app/core/security.py](../app/core/security.py) | Yes | Enforced with X-User-Id or bearer user header. |
-| Database models | Backend | Implemented | [app/db/models](../app/db/models) | Yes | Models exist and are tested in SQLAlchemy memory-backed tests. |
-| DB runtime wiring | Backend | Incomplete | [app/db/session.py](../app/db/session.py) | Partial | Engine is configured but the runtime is still not fully provisioned as a production DB. |
-| Model inference contract | ML | Implemented | [app/services/ml_inference.py](../app/services/ml_inference.py) | Yes | Contract checks inputs and output safety. |
-| Real trained model artifact | ML | Missing | [app/core/config.py](../app/core/config.py) | No | No model artifact path is set in the repo. |
-| Evaluation metrics artifact | ML | Missing | [app/core/config.py](../app/core/config.py) | No | No metrics file is configured or checked in. |
-| Synthetic baseline regression pipeline | ML | Implemented | [app/data_pipeline/baseline_regression.py](../app/data_pipeline/baseline_regression.py) | Yes | Reproducible fixture-based validation exists. |
+| FastAPI app factory | Backend | Implemented | [main.py](../backend/app/main.py) | Yes | Healthy app structure exists. |
+| MRI validation endpoint | Backend | Implemented | [router.py](../backend/app/api/v1/router.py) | Yes | Validates supported NIfTI inputs and rejects invalid ones. |
+| Assessment creation endpoint | Backend | Implemented | [router.py](../backend/app/api/v1/router.py) | Yes | Accepts upload and creates queued assessment state. |
+| Assessment detail endpoint | Backend | Implemented | [router.py](../backend/app/api/v1/router.py) | Yes | Endpoint exists but not the same contract as the frontend expects. |
+| Report generation | Backend | Implemented | [report_service.py](../backend/app/services/report_service.py) | Yes | Real PDF generation works for completed assessment payloads. |
+| Auth and ownership controls | Backend | Implemented | [security.py](../backend/app/core/security.py) | Yes | Enforced with X-User-Id or bearer user header. |
+| Database models | Backend | Implemented | [models](../backend/app/db/models) | Yes | Models exist and are tested in SQLAlchemy memory-backed tests. |
+| DB runtime wiring | Backend | Incomplete | [session.py](../backend/app/db/session.py) | Partial | Engine is configured but the runtime is still not fully provisioned as a production DB. |
+| Model inference contract | ML | Implemented | [ml_inference.py](../backend/app/services/ml_inference.py) | Yes | Contract checks inputs and output safety. |
+| Real trained model artifact | ML | Missing | [config.py](../backend/app/core/config.py) | No | No model artifact path is set in the repo. |
+| Evaluation metrics artifact | ML | Missing | [config.py](../backend/app/core/config.py) | No | No metrics file is configured or checked in. |
+| Synthetic baseline regression pipeline | ML | Implemented | [baseline_regression.py](../backend/app/data_pipeline/baseline_regression.py) | Yes | Reproducible fixture-based validation exists. |
 | Real MRI dataset | ML | Missing | [docs/ml-data-and-artifacts-inventory.md](ml-data-and-artifacts-inventory.md) | No | No dataset files or subject metadata manifest are present. |
 | End-to-end live workflow | Full app | Not working yet | Cross-check across app and frontend | Partial | Requires contract alignment and real model artifact. |
 | Production deployment readiness | Full app | Not ready | [README.md](../README.md) | No | Current repo is prototype-grade and explicitly gated. |

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import math
 from datetime import datetime, timezone
 from typing import Any
+from xml.sax.saxutils import escape
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -17,7 +19,7 @@ def _to_float(value: Any) -> float | None:
         float_value = float(value)
     except (TypeError, ValueError):
         return None
-    return float_value if float('inf') != float_value and float('-inf') != float_value else None
+    return float_value if math.isfinite(float_value) else None
 
 
 def _format_yrs(value: Any) -> str:
@@ -37,6 +39,8 @@ def _format_interval(values: Any) -> str:
     lower_value = _to_float(lower)
     upper_value = _to_float(upper)
     if lower_value is None or upper_value is None:
+        return 'Invalid interval'
+    if lower_value > upper_value:
         return 'Invalid interval'
     return f'{lower_value:.1f} to {upper_value:.1f} years'
 
@@ -111,13 +115,14 @@ def generate_assessment_report_pdf(assessment: dict[str, Any]) -> bytes:
 
     story: list[Any] = []
     story.append(Paragraph('NeuroAge Brain Age Report', title_style))
-    story.append(Paragraph(f'Assessment ID: {assessment.get("assessment_id")}', body_style))
-    story.append(Paragraph(f'Generated: {generated_at_iso}', body_style))
+    if assessment.get('subject_name'):
+        story.append(Paragraph(f"Assessment name: {escape(str(assessment['subject_name']))}", body_style))
+    story.append(Paragraph(f'Generated: {escape(generated_at_iso)}', body_style))
     story.append(Spacer(1, 12))
 
     table_data = [
         ['Field', 'Value'],
-        ['Assessment identifier', str(assessment.get('assessment_id', 'N/A'))],
+        ['Assessment name', str(assessment.get('subject_name') or 'Not provided')],
         ['Chronological age', _format_yrs(chronological_age)],
         ['Predicted brain age', _format_yrs(predicted_brain_age)],
         ['Brain age difference', _format_yrs(brain_age_difference)],
@@ -155,7 +160,7 @@ def generate_assessment_report_pdf(assessment: dict[str, Any]) -> bytes:
         limitations = [limitations]
     story.append(Paragraph('Key limitations', heading_style))
     for item in limitations:
-        story.append(Paragraph(f'• {item}', body_style))
+        story.append(Paragraph(f'• {escape(str(item))}', body_style))
 
     story.append(Spacer(1, 12))
     story.append(Paragraph('Clinical and scientific safeguards', heading_style))

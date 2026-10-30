@@ -32,13 +32,13 @@ const workflowSteps = [
   {
     title: '2. AI-based analysis',
     description:
-      'The model extracts structural features from the scan and estimates age using a research-trained predictive pipeline.',
+      'The model processes the 3D scan and produces an exploratory age estimate using its learned image patterns.',
     icon: Activity,
   },
   {
     title: '3. Review results',
     description:
-      'Inspect predicted age, model confidence, and the feature patterns influencing the output in a research dashboard.',
+      'Review the predicted age, available evaluation context, and research-use limitations in the assessment results.',
     icon: Brain,
   },
 ]
@@ -99,21 +99,6 @@ export const LandingPage: React.FC = () => {
               </div>
             </div>
           </Link>
-
-          <nav
-            aria-label="Primary"
-            className="hidden items-center gap-8 md:flex"
-          >
-            {navItems.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                className="text-sm text-[#c6c9d2] transition-colors hover:text-[#ebecef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5eead4] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0b0e] rounded-md px-2 py-1"
-              >
-                {item.label}
-              </a>
-            ))}
-          </nav>
 
           <div className="hidden md:block">
             <Link

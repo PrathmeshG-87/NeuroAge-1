@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   AlertCircle,
@@ -26,10 +26,7 @@ import { MRIViewer } from '@/components/mri/MRIViewer'
 import { MedicalDisclaimer } from '@/components/assessment/MedicalDisclaimer'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
-import {
-  assessmentService,
-  type AssessmentResult,
-} from '@/services/assessment'
+import { assessmentService, type AssessmentResult } from '@/services/assessment'
 import {
   historyService,
   reportService,
@@ -53,8 +50,8 @@ const PlaceholderPage: React.FC<PlaceholderPageProps> = ({
   description,
   eyebrow,
   detail,
-  ctaLabel = 'Return to dashboard',
-  ctaTo = '/dashboard',
+  ctaLabel = 'New assessment',
+  ctaTo = '/assessment',
   icon,
 }) => {
   return (
@@ -109,13 +106,6 @@ export const AssessmentPage: React.FC = () => (
         </h1>
       </div>
 
-      <Link
-        to="/dashboard"
-        className="inline-flex items-center gap-2 self-start rounded-xl border border-[#5eead4]/35 bg-[#5eead4]/12 px-4 py-2.5 text-sm font-medium text-[#5eead4] transition-colors hover:border-[#5eead4]/60 hover:bg-[#5eead4]/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5eead4]"
-      >
-        Return to dashboard
-        <ArrowRight className="h-4 w-4" />
-      </Link>
     </div>
 
     <div className="max-w-5xl">
@@ -124,48 +114,18 @@ export const AssessmentPage: React.FC = () => (
   </div>
 )
 
-const createDemoPreviewDataUrl = () => {
-  const size = 240
-  const cells = Array.from({ length: size }, (_, y) => {
-    const row: string[] = []
-    for (let x = 0; x < size; x += 1) {
-      const centerX = x - size / 2
-      const centerY = y - size / 2
-      const radius = Math.sqrt(centerX * centerX + centerY * centerY)
-      const wave = Math.sin((x + y) / 12) * 0.5 + 0.5
-      const ring = Math.sin(radius / 7) * 0.5 + 0.5
-      const intensity = Math.min(
-        255,
-        Math.max(0, Math.round((wave * 0.5 + ring * 0.5) * 255)),
-      )
-      row.push(`<rect x="${x}" y="${y}" width="1" height="1" fill="rgb(${intensity},${intensity},${intensity})" />`)
-    }
-    return row.join('')
-  }).join('')
-
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
-      <rect width="240" height="240" fill="#07080b"/>
-      ${cells}
-    </svg>
-  `
-
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-}
-
 export const AssessmentDetailPage: React.FC = () => {
   const { id } = useParams()
   const [liveResult, setLiveResult] = useState<AssessmentResult | null>(null)
+  const [resultId, setResultId] = useState<string | null>(null)
+  const [loadedId, setLoadedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(Boolean(id))
   const [error, setError] = useState<string | null>(null)
+  const currentResult = resultId === id ? liveResult : null
+  const isLoadingCurrent = loading || loadedId !== id
 
   useEffect(() => {
-    if (!id) {
-      setLiveResult(null)
-      setError('The assessment id is missing from this route.')
-      setLoading(false)
-      return
-    }
+    if (!id) return
 
     let isActive = true
 
@@ -176,6 +136,48 @@ export const AssessmentDetailPage: React.FC = () => {
         const nextResult = await assessmentService.fetchAssessmentResult(id)
         if (isActive) {
           setLiveResult(nextResult)
+          setResultId(id)
+        }
+
+        if (
+          nextResult.status === 'queued' ||
+          nextResult.status === 'processing'
+        ) {
+          void (async () => {
+            while (isActive) {
+              await new Promise((resolve) => window.setTimeout(resolve, 2000))
+              if (!isActive) return
+
+              const status = await assessmentService.fetchAssessmentStatus(id)
+              const refreshedResult =
+                await assessmentService.fetchAssessmentResult(id)
+              if (isActive) {
+                setLiveResult(refreshedResult)
+                setResultId(id)
+              }
+
+              const normalizedStatus = status.status.toLowerCase()
+              if (
+                [
+                  'completed',
+                  'success',
+                  'failed',
+                  'rejected',
+                  'error',
+                ].includes(normalizedStatus)
+              ) {
+                return
+              }
+            }
+          })().catch((pollError: unknown) => {
+            if (isActive) {
+              setError(
+                pollError instanceof Error
+                  ? pollError.message
+                  : 'Unable to refresh the assessment status.',
+              )
+            }
+          })
         }
       } catch (loadError) {
         if (isActive) {
@@ -188,6 +190,7 @@ export const AssessmentDetailPage: React.FC = () => {
       } finally {
         if (isActive) {
           setLoading(false)
+          setLoadedId(id)
         }
       }
     }
@@ -198,38 +201,25 @@ export const AssessmentDetailPage: React.FC = () => {
     }
   }, [id])
 
-  const fallbackResult = useMemo<AssessmentResult>(
-    () => ({
-      assessmentId: id ?? 'AS-2408-014',
-      status: 'completed',
-      chronologicalAge: 62,
-      predictedBrainAge: 67.2,
-      brainAgeDifference: 5.2,
-      uncertaintyInterval: [64.1, 69.8],
-      modelName: 'ResNet3D-Regression v1',
-      assessmentDate: '2026-10-18T09:35:00.000Z',
-      processingStatus: 'Completed',
-      preview: {
-        url: createDemoPreviewDataUrl(),
-        fileType: 'image',
-        available: true,
-        message: 'Generated MRI preview from the central slice of the uploaded volume.',
-        availableViews: ['axial'],
-      },
-      modelLimitations: [
-        'This estimate is exploratory and should not be treated as a medical diagnosis.',
-        'Performance depends on image quality, preprocessing, and scan acquisition settings.',
-        'Brain age estimates can vary across scanners and study populations.',
-      ],
-      disclaimer:
-        'This result is intended for research and educational interpretation only and is not a clinical diagnosis.',
-    }),
-    [id],
-  )
+  if (!id) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-[28px] border border-red-500/30 bg-[#111217] p-6 sm:p-8">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#fca5a5]">
+            Assessment error
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.06em] text-[#ebecef] sm:text-4xl">
+            Unable to load assessment
+          </h1>
+          <p className="mt-3 text-sm text-[#c6c9d2]">
+            The assessment id is missing from this route.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
-  const result = liveResult ?? fallbackResult
-
-  if (loading && !liveResult) {
+  if (isLoadingCurrent && !currentResult) {
     return (
       <div className="space-y-6">
         <div className="rounded-[28px] border border-white/[0.08] bg-[#111217] p-6 sm:p-8">
@@ -244,7 +234,7 @@ export const AssessmentDetailPage: React.FC = () => {
     )
   }
 
-  if (error && !liveResult) {
+  if (error && !currentResult) {
     return (
       <div className="space-y-6">
         <div className="rounded-[28px] border border-red-500/30 bg-[#111217] p-6 sm:p-8">
@@ -260,10 +250,32 @@ export const AssessmentDetailPage: React.FC = () => {
     )
   }
 
+  if (!currentResult) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-[28px] border border-white/[0.08] bg-[#111217] p-6 sm:p-8">
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#8d909c]">
+            Assessment results
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.06em] text-[#ebecef] sm:text-4xl">
+            No result is available for this assessment.
+          </h1>
+        </div>
+      </div>
+    )
+  }
+
+  const result = currentResult
+
   const comparisonData = [
     { label: 'Chronological age', value: result.chronologicalAge ?? 0 },
     { label: 'Predicted brain age', value: result.predictedBrainAge ?? 0 },
   ]
+  const hasComparisonData =
+    typeof result.chronologicalAge === 'number' &&
+    Number.isFinite(result.chronologicalAge) &&
+    typeof result.predictedBrainAge === 'number' &&
+    Number.isFinite(result.predictedBrainAge)
 
   const formatAgeValue = (value: number | null | undefined) => {
     if (
@@ -274,18 +286,6 @@ export const AssessmentDetailPage: React.FC = () => {
       return 'Not available'
     }
     return `${value.toFixed(1)} years`
-  }
-
-  const formatInterval = (interval: [number, number] | null | undefined) => {
-    if (
-      !interval ||
-      interval.some(
-        (entry) => typeof entry !== 'number' || !Number.isFinite(entry),
-      )
-    ) {
-      return 'Not available'
-    }
-    return `${interval[0].toFixed(1)}–${interval[1].toFixed(1)} years`
   }
 
   const difference =
@@ -303,7 +303,14 @@ export const AssessmentDetailPage: React.FC = () => {
           <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#5eead4]">
             Assessment results
           </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.06em] text-[#ebecef] sm:text-4xl">{`Assessment ${result.assessmentId}`}</h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.06em] text-[#ebecef] sm:text-4xl">
+            {result.subjectName
+              ? `${result.subjectName} — Brain-age assessment`
+              : `Assessment ${result.assessmentId.slice(0, 20)}`}
+          </h1>
+          <p className="mt-2 text-xs font-mono text-[#8d909c]">
+            ID: {result.assessmentId}
+          </p>
           <p className="mt-3 text-sm text-[#8d909c]">
             Processing status: {result.processingStatus}
           </p>
@@ -315,7 +322,21 @@ export const AssessmentDetailPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {error ? (
+        <p role="alert" className="text-sm text-[#fca5a5]">
+          {error}
+        </p>
+      ) : null}
+      {result.status === 'failed' ? (
+        <p
+          role="alert"
+          className="rounded-xl border border-[#ef4444]/25 bg-[#ef4444]/8 p-4 text-sm text-[#fca5a5]"
+        >
+          {result.message || 'The model could not generate a result.'}
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card className="rounded-[24px] border border-white/[0.08] bg-[#111217] p-5">
           <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#8d909c]">
             Chronological age
@@ -345,14 +366,6 @@ export const AssessmentDetailPage: React.FC = () => {
           </p>
         </Card>
 
-        <Card className="rounded-[24px] border border-white/[0.08] bg-[#111217] p-5">
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-[#8d909c]">
-            Prediction interval
-          </p>
-          <p className="mt-4 text-lg font-semibold tracking-[-0.04em] text-[#ebecef]">
-            {formatInterval(result.uncertaintyInterval)}
-          </p>
-        </Card>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -366,50 +379,56 @@ export const AssessmentDetailPage: React.FC = () => {
             </h2>
           </div>
 
-          <div
-            className="h-64 w-full"
-            aria-label="Bar chart comparing chronological age and predicted brain age"
-            role="img"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={comparisonData}
-                margin={{ top: 12, right: 16, left: 8, bottom: 16 }}
-              >
-                <CartesianGrid
-                  stroke="rgba(255,255,255,0.08)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fill: '#8d909c', fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fill: '#8d909c', fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  formatter={(value) => {
-                    const numericValue = Number(value)
-                    return [
-                      `${Number.isFinite(numericValue) ? numericValue.toFixed(1) : '—'} years`,
-                      'Age',
-                    ] as [string, string]
-                  }}
-                  contentStyle={{
-                    backgroundColor: '#171921',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '12px',
-                    color: '#ebecef',
-                  }}
-                />
-                <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#5eead4" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {hasComparisonData ? (
+            <div
+              className="h-64 w-full"
+              aria-label="Bar chart comparing chronological age and predicted brain age"
+              role="img"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={comparisonData}
+                  margin={{ top: 12, right: 16, left: 8, bottom: 16 }}
+                >
+                  <CartesianGrid
+                    stroke="rgba(255,255,255,0.08)"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fill: '#8d909c', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: '#8d909c', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    formatter={(value) => {
+                      const numericValue = Number(value)
+                      return [
+                        `${Number.isFinite(numericValue) ? numericValue.toFixed(1) : '—'} years`,
+                        'Age',
+                      ] as [string, string]
+                    }}
+                    contentStyle={{
+                      backgroundColor: '#171921',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: '12px',
+                      color: '#ebecef',
+                    }}
+                  />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#5eead4" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-white/10 text-center text-sm text-[#8d909c]">
+              Age comparison will be available after assessment processing.
+            </div>
+          )}
 
           <p className="mt-5 text-sm leading-7 text-[#c6c9d2]">
             The brain age difference is calculated as predicted brain age minus
@@ -426,15 +445,15 @@ export const AssessmentDetailPage: React.FC = () => {
         </Card>
 
         <MRIViewer
-          previewStatus={result.preview?.available ? 'ready' : 'unavailable'}
-          previewUrl={result.preview?.url ?? null}
-          availableViews={result.preview?.availableViews ?? ['axial']}
+          previewStatus={
+            result.preview?.volumeEndpoint ? 'ready' : 'unavailable'
+          }
+          volumeEndpoint={result.preview?.volumeEndpoint}
           unavailableReason={
             result.preview?.message ??
-            'Preview unavailable for this MRI dataset.'
+            'No MRI volume is available for this assessment.'
           }
-          title="MRI preview"
-          imageAlt="Generated MRI preview or visualization"
+          title="MRI volume viewer"
         />
       </div>
 
@@ -497,7 +516,8 @@ export const ReportsPage: React.FC = () => {
     'all',
   )
   const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState<string | null>(null)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [downloadError, setDownloadError] = React.useState<string | null>(null)
   const [downloadInFlight, setDownloadInFlight] = React.useState<string | null>(
     null,
   )
@@ -508,14 +528,14 @@ export const ReportsPage: React.FC = () => {
     const load = async () => {
       try {
         setLoading(true)
-        setError(null)
+        setLoadError(null)
         const items = await reportService.listReports()
         if (isActive) {
           setReports(items)
         }
       } catch (loadError) {
         if (isActive) {
-          setError(
+          setLoadError(
             loadError instanceof Error
               ? loadError.message
               : 'Unable to load reports right now.',
@@ -553,19 +573,24 @@ export const ReportsPage: React.FC = () => {
     }
 
     setDownloadInFlight(assessmentId)
-    setError(null)
+    setDownloadError(null)
 
     try {
       const result = await reportService.downloadReport(assessmentId)
+      const url = window.URL.createObjectURL(result.blob)
       const link = document.createElement('a')
-      link.href = result.url
+      link.href = url
       link.download = result.fileName
       link.rel = 'noopener'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      try {
+        document.body.appendChild(link)
+        link.click()
+      } finally {
+        link.remove()
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+      }
     } catch (downloadError) {
-      setError(
+      setDownloadError(
         downloadError instanceof Error
           ? downloadError.message
           : 'Unable to download the report.',
@@ -636,10 +661,10 @@ export const ReportsPage: React.FC = () => {
           <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-[#5eead4] border-t-transparent" />
           <p className="mt-4 text-sm text-[#c6c9d2]">Loading reports...</p>
         </Card>
-      ) : error ? (
+      ) : loadError ? (
         <Card className="rounded-[28px] border border-[#ef4444]/25 bg-[#ef4444]/8 p-6 text-[#fca5a5]">
           <p className="font-medium text-[#fca5a5]">Unable to load reports</p>
-          <p className="mt-2 text-sm leading-7">{error}</p>
+          <p className="mt-2 text-sm leading-7">{loadError}</p>
         </Card>
       ) : filteredReports.length === 0 ? (
         <Card className="rounded-[28px] border border-dashed border-white/[0.1] bg-[#111217] p-8 text-center">
@@ -685,7 +710,9 @@ export const ReportsPage: React.FC = () => {
                     {report.summary ?? 'Report summary unavailable.'}
                   </p>
                   <p className="mt-2 text-xs font-mono text-[#8d909c]">
-                    {new Date(report.generatedAt).toLocaleString()}
+                    {report.generatedAt
+                      ? new Date(report.generatedAt).toLocaleString()
+                      : 'Not generated yet'}
                   </p>
                 </div>
 
@@ -717,6 +744,16 @@ export const ReportsPage: React.FC = () => {
           ))}
         </div>
       )}
+
+      {downloadError ? (
+        <Card
+          role="alert"
+          className="border border-[#ef4444]/25 bg-[#ef4444]/8 text-[#fca5a5]"
+        >
+          <p className="font-medium">Report download failed</p>
+          <p className="mt-2 text-sm leading-6">{downloadError}</p>
+        </Card>
+      ) : null}
     </div>
   )
 }
@@ -1321,15 +1358,15 @@ export const NotFoundPage: React.FC = () => (
         This page does not exist.
       </h1>
       <p className="mt-4 text-base leading-7 text-[#c6c9d2]">
-        The requested route is unavailable in the current shell. Please return
-        to the dashboard or use the navigation to continue.
+        The requested route is unavailable. Use an assessment or the navigation
+        to continue.
       </p>
       <div className="mt-6 flex justify-center">
         <Link
-          to="/dashboard"
+          to="/assessment"
           className="inline-flex items-center gap-2 rounded-xl bg-[#5eead4] px-4 py-2.5 text-sm font-medium text-[#0a0b0e] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#7feee0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5eead4]"
         >
-          Go to dashboard
+          Start an assessment
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>

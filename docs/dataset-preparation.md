@@ -90,7 +90,7 @@ DATASET_METADATA_PATH=./data/raw/metadata.csv
 DATASET_DERIVED_DIR=./data/derived
 ```
 
-Run the inventory script as follows:
+From the `backend/` directory, run the inventory script as follows:
 
 ```bash
 python scripts/dataset_inventory.py \
@@ -114,8 +114,8 @@ The project must not:
 
 This repository includes:
 
-- the reproducible data inventory script: `scripts/dataset_inventory.py`
-- the analysis module: `app/data_pipeline/dataset_inventory.py`
+- the reproducible data inventory script: `backend/scripts/dataset_inventory.py`
+- the analysis module: `backend/app/data_pipeline/dataset_inventory.py`
 - the dataset documentation: this file
 - a generated quality report in the derived directory produced by the script
 

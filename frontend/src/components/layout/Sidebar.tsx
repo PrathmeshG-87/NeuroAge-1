@@ -1,10 +1,7 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  Activity,
-  BarChart3,
   Brain,
-  ClipboardList,
   FileText,
   Gauge,
   HelpCircle,
@@ -13,13 +10,11 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { appConfig } from '@/config/env'
 
 const links = [
-  { to: '/dashboard', label: 'Dashboard', icon: Activity },
   { to: '/assessment', label: 'Assessment', icon: Gauge },
-  { to: '/assessments/123', label: 'Assessment Detail', icon: ClipboardList },
   { to: '/reports', label: 'Reports', icon: FileText },
-  { to: '/progress', label: 'Progress', icon: BarChart3 },
   { to: '/methodology', label: 'Methodology', icon: Layers3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
@@ -33,7 +28,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose }) => {
   const content = (
     <aside className="flex h-full w-full flex-col border-r border-white/[0.08] bg-[#111217] p-4">
       <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
-        <div className="flex items-center gap-3">
+        <NavLink
+          to="/"
+          onClick={onClose}
+          aria-label="NeuroAge home"
+          className="flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5eead4]"
+        >
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#5eead4]/35 bg-[#5eead4]/12 text-[#5eead4]">
             <Brain className="h-5 w-5" />
           </div>
@@ -45,7 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose }) => {
               Research Console
             </div>
           </div>
-        </div>
+        </NavLink>
 
         <button
           type="button"
@@ -88,7 +88,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onClose }) => {
           <span className="font-medium">Academic Edition</span>
         </div>
         <p className="mt-2 text-[11px] leading-relaxed">
-          Demo mode only. No backend session is assumed for this shell.
+          {appConfig.isDemoMode
+            ? 'Demo mode only. Configure the API to submit a real assessment.'
+            : 'Live API mode. Assessment access is protected by a private token.'}
         </p>
       </div>
     </aside>

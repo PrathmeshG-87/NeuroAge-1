@@ -1,0 +1,18 @@
+{
+  "id": "prathmeshgumgaonkar/neuroage-ixi-3d-resnet-18-brain-age-regression",
+  "title": "NeuroAge IXI 3D ResNet-18 Brain Age Regression",
+  "code_file": "train_3d_resnet.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_tpu": "false",
+  "enable_internet": "false",
+  "machine_shape": "",
+  "dataset_sources": [
+    "kingpowa/preprocessed-ixi-dataset-with-fs8"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

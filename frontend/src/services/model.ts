@@ -13,22 +13,20 @@ export interface ModelEvaluationMetrics {
   lastEvaluated: string | null
 }
 
-const DEMO_METRICS: ModelEvaluationMetrics = {
-  modelName: 'ResNet3D-Regression v1',
-  architecture: '3D CNN regression',
-  mae: 4.18,
-  rmse: 5.32,
-  pearsonR: 0.91,
-  datasetEvaluated: 'IXI + OASIS-1/OASIS-3 (public research cohorts)',
-  nTestSamples: 184,
-  biasCorrected: true,
-  lastEvaluated: '2026-10-18T00:00:00.000Z',
-}
-
 export const modelMetricsService = {
   async getMetrics(): Promise<ModelEvaluationMetrics> {
     if (appConfig.isDemoMode) {
-      return DEMO_METRICS
+      return {
+        modelName: 'No verified model metrics',
+        architecture: 'Unavailable',
+        mae: null,
+        rmse: null,
+        pearsonR: null,
+        datasetEvaluated: 'Unavailable',
+        nTestSamples: null,
+        biasCorrected: false,
+        lastEvaluated: null,
+      }
     }
 
     const response = await apiRequest<{
@@ -46,18 +44,29 @@ export const modelMetricsService = {
     }
 
     return {
-      modelName: String(payload.modelName ?? 'Unknown model'),
+      modelName: String(payload.modelName ?? payload.model_name ?? 'Unknown model'),
       architecture: String(payload.architecture ?? 'Unknown architecture'),
       mae: payload.mae == null ? null : Number(payload.mae),
       rmse: payload.rmse == null ? null : Number(payload.rmse),
-      pearsonR: payload.pearsonR == null ? null : Number(payload.pearsonR),
-      datasetEvaluated: String(payload.datasetEvaluated ?? 'Not yet evaluated'),
+      pearsonR:
+        (payload.pearsonR ?? payload.pearson_r) == null
+          ? null
+          : Number(payload.pearsonR ?? payload.pearson_r),
+      datasetEvaluated: String(
+        payload.datasetEvaluated ??
+          payload.dataset_name ??
+          payload.evaluation_dataset ??
+          payload.dataset_evaluated ??
+          'Not yet evaluated',
+      ),
       nTestSamples:
-        payload.nTestSamples == null ? null : Number(payload.nTestSamples),
-      biasCorrected: Boolean(payload.biasCorrected),
+        (payload.nTestSamples ?? payload.n_test_samples) == null
+          ? null
+          : Number(payload.nTestSamples ?? payload.n_test_samples),
+      biasCorrected: Boolean(payload.biasCorrected ?? payload.bias_corrected),
       lastEvaluated:
-        typeof payload.lastEvaluated === 'string'
-          ? payload.lastEvaluated
+        typeof (payload.lastEvaluated ?? payload.last_evaluated) === 'string'
+          ? String(payload.lastEvaluated ?? payload.last_evaluated)
           : null,
     }
   },

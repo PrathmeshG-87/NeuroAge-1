@@ -47,8 +47,8 @@ The test suite generates synthetic NIfTI arrays using nibabel and numpy. These a
 
 Examples:
 
-- [tests/test_mri_ingestion.py](../tests/test_mri_ingestion.py)
-- [tests/test_backend_suite.py](../tests/test_backend_suite.py)
+- [test_mri_ingestion.py](../backend/tests/test_mri_ingestion.py)
+- [test_backend_suite.py](../backend/tests/test_backend_suite.py)
 
 This confirms the repo can validate supported MRI file formats, but not that a real dataset exists.
 
@@ -64,7 +64,7 @@ This includes:
 - no ONNX models
 - no evaluation metrics file under a configured path
 
-The environment variables in [app/core/config.py](../app/core/config.py) and [.env.example](../.env.example) leave the actual model path blank, which is consistent with the current unavailable state.
+The environment variables in [config.py](../backend/app/core/config.py) and [.env.example](../backend/.env.example) leave the actual model path blank, which is consistent with the current unavailable state.
 
 ## 4. Data and artifact conclusion
 

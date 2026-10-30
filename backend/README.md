@@ -2,6 +2,8 @@
 
 AI-based brain age prediction and healthy brain aging assessment backend for MRI analysis and report generation.
 
+All backend application code, migrations, tests, scripts, dependencies, and container configuration are contained in this directory. Run backend commands from `backend/` unless stated otherwise.
+
 ## Overview
 
 This repository includes a Python FastAPI backend for:
@@ -13,7 +15,7 @@ This repository includes a Python FastAPI backend for:
 - PDF report generation from completed assessment data
 - backend-owned authorization and rate limiting for protected resources
 
-The backend currently runs locally with Python 3.13 and FastAPI, and is prepared for deployment scaffolding and frontend integration. It is not yet a fully production-certified deployment because live model artifacts, external database runtime, and production identity/deployment controls remain environment-dependent.
+The backend runs on FastAPI. Anonymous assessment uploads are enabled by default and each assessment is protected by a cryptographically random capability token. Optional local account endpoints remain available for API clients that choose to authenticate.
 
 ## Architecture overview
 
@@ -55,28 +57,30 @@ Dockerfile
 1. Create and activate a virtual environment.
 2. Install dependencies.
 
-```bash
-python -m venv .venv
-. .venv/bin/activate  # Linux/macOS
-# or .venv\Scripts\activate  # Windows PowerShell
+```powershell
+# Run setup commands from the repository root; the virtual environment is shared by the project.
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r backend\requirements.txt
 ```
 
 ## Environment variable setup
 
-Copy the example file and update values for your environment:
+Local development starts without a `.env` file. Defaults provide a random process-local JWT signing key and a persistent SQLite database at `backend/storage/neuroage.db`. To override settings, copy the example and edit only the values you need:
 
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
 
-Required runtime variables for local execution include:
+Run the copy command from the `backend/` directory. No `.env` file is needed for local startup.
+
+Deployment-specific settings can include:
 
 - APP_NAME
 - APP_VERSION
 - DATABASE_URL
-- SECRET_KEY
+- JWT_SECRET_KEY (required in production; generated automatically for local development)
 - CORS_ORIGINS
 - MODEL_ARTIFACT_PATH
 - MODEL_NAME
@@ -86,20 +90,25 @@ Required runtime variables for local execution include:
 - MAX_UPLOAD_SIZE_BYTES
 - AUTHENTICATION_REQUIRED
 - RATE_LIMIT_PER_MINUTE
+- TRUSTED_PROXY_IPS (only when deployed behind explicitly trusted reverse proxies)
 
 Important:
 
 - local defaults are intentionally safe for development, but not for production
-- `SECRET_KEY` and production database credentials must be set explicitly in deployment
+- Production must set a strong `JWT_SECRET_KEY` and production database credentials explicitly
 - `MODEL_ARTIFACT_PATH` must point to a real inference artifact if live ML predictions are required
+- `AUTHENTICATION_REQUIRED=false` allows assessment submission without an account; set it to `true` only when a client supplies valid bearer tokens
+- Result, MRI, and report endpoints require either the owning authenticated user or the assessment-specific capability token
+- Upload bodies and decoded NIfTI voxel counts are limited before voxel data is materialized; only single-volume structural scans are accepted
+- New assessments receive short `NA-…` identifiers. The PDF report content and download filename omit that identifier.
 
 ## Database configuration and migrations
 
-The backend uses SQLAlchemy with PostgreSQL-compatible URLs and Alembic migrations.
+The backend uses SQLAlchemy and Alembic migrations. Local development defaults to SQLite at `backend/storage/neuroage.db`; assessment records persist across server restarts. The schema is initialized automatically for local SQLite startup. Production deployments can configure another supported SQLAlchemy database and apply migrations.
 
 ### Local database
 
-Example:
+Example PostgreSQL configuration:
 
 ```bash
 export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/neuroage"
@@ -107,14 +116,14 @@ export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/neuro
 
 ### Run migrations
 
-```bash
-alembic upgrade head
+```powershell
+python -m alembic -c alembic.ini upgrade head
 ```
 
 ### Create a new migration
 
-```bash
-alembic revision -m "describe_change"
+```powershell
+python -m alembic -c alembic.ini revision -m "describe_change"
 ```
 
 ### Migration status
@@ -125,9 +134,12 @@ The initial migration under `alembic/versions/20261018_initial_schema.py` create
 
 ### Local development
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```powershell
+# From the repository root; no activation or manual JWT secret is needed.
+.\start-backend.ps1
 ```
+
+When already in `backend/`, run `..\\start-backend.ps1`. To choose another port, pass it as a parameter, for example `..\\start-backend.ps1 -Port 8010`. The script selects the project `.venv` and sets the working directory correctly.
 
 ### Production-style ASGI startup
 
@@ -169,12 +181,12 @@ When the model is unavailable, `BrainAgeInferenceService` returns a documented u
 
 ## MRI dataset preparation workflow
 
-The repository includes a reproducible MRI dataset-preparation pipeline that can inventory a structural MRI dataset, reconcile subject labels, detect missing metadata and corrupted files, and generate a transparent quality report.
+The repository includes a reproducible MRI dataset-preparation pipeline that can inventory an authorized structural MRI dataset, reconcile subject labels, detect missing metadata and corrupted files, and generate a transparent quality report. MRI datasets are not bundled or automatically downloaded.
 
 ### Configure the local dataset directory
 
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
 
 Then set the dataset environment variables:
@@ -187,11 +199,11 @@ DATASET_DERIVED_DIR=./data/derived
 
 ### Inventory and quality-check the dataset
 
-```bash
-python scripts/dataset_inventory.py \
-  --dataset-root "$DATASET_ROOT" \
-  --metadata-path "$DATASET_METADATA_PATH" \
-  --output-dir "$DATASET_DERIVED_DIR"
+```powershell
+python scripts/dataset_inventory.py `
+  --dataset-root $env:DATASET_ROOT `
+  --metadata-path $env:DATASET_METADATA_PATH `
+  --output-dir $env:DATASET_DERIVED_DIR
 ```
 
 ### Supported dataset policy
@@ -201,13 +213,13 @@ python scripts/dataset_inventory.py \
 - Reject duplicate scans from the same subject unless the protocol explicitly requires them.
 - Never fabricate MRI data or model performance.
 
-See [docs/dataset-preparation.md](docs/dataset-preparation.md) for the full dataset selection, data dictionary, and inclusion policy.
+See [../docs/dataset-preparation.md](../docs/dataset-preparation.md) for the full dataset selection, data dictionary, and inclusion policy.
 
 ## PDF report generation
 
 Completed assessment records can produce a real PDF report using the ReportLab library. The generated report includes:
 
-- assessment id and generation timestamp
+- generation timestamp (assessment identifiers are omitted from report content and filenames)
 - chronological age
 - predicted brain age
 - brain-age difference
@@ -236,11 +248,11 @@ python -m pytest tests/test_security.py -q
 
 ### Container deployment
 
-A Dockerfile is included for building a Linux container image.
+A Dockerfile is included for building a Linux container image. Run the build from the repository root:
 
 ```bash
-docker build -t neuroage-backend .
-docker run --rm -p 8000:8000 --env-file .env neuroage-backend
+docker build -t neuroage-backend ./backend
+docker run --rm -p 8000:8000 --env-file backend/.env neuroage-backend
 ```
 
 ### File permissions and storage
@@ -254,7 +266,7 @@ docker run --rm -p 8000:8000 --env-file .env neuroage-backend
 
 The backend includes:
 
-- user-context enforcement via `X-User-Id` or bearer-token style context
+- Optional local JWT authentication and assessment owner/capability-token authorization
 - ownership checks on assessments and reports
 - rate limiting for resource-intensive endpoints
 - log redaction for sensitive headers
@@ -271,8 +283,8 @@ Important limitations:
 
 The backend is intentionally prepared for deployment, but the following remain environment-dependent and should be explicitly completed before production use:
 
-- live PostgreSQL or Supabase database configuration in the target environment
-- final authentication provider integration with the frontend contract
+- live PostgreSQL database configuration in the target environment
+- optional bearer-authentication configuration if required by the deployment
 - deployment-specific secret management and TLS configuration
 - actual ML model artifact availability and artifact versioning
 - retention/deletion automation for MRI files and generated reports

@@ -28,9 +28,9 @@ Checks:
 
 Evidence:
 
-- [app/api/v1/router.py](../app/api/v1/router.py)
+- [router.py](../backend/app/api/v1/router.py)
 - [frontend/src/services/assessment.ts](../frontend/src/services/assessment.ts)
-- [tests/test_backend_suite.py](../tests/test_backend_suite.py)
+- [test_backend_suite.py](../backend/tests/test_backend_suite.py)
 
 ### Layer 2: upload and validation path
 
@@ -45,8 +45,8 @@ Checks:
 
 Evidence:
 
-- [app/services/mri_ingestion.py](../app/services/mri_ingestion.py)
-- [tests/test_mri_ingestion.py](../tests/test_mri_ingestion.py)
+- [mri_ingestion.py](../backend/app/services/mri_ingestion.py)
+- [test_mri_ingestion.py](../backend/tests/test_mri_ingestion.py)
 
 ### Layer 3: report generation path
 
@@ -61,9 +61,9 @@ Checks:
 
 Evidence:
 
-- [app/services/report_service.py](../app/services/report_service.py)
-- [tests/test_report_generation.py](../tests/test_report_generation.py)
-- [tests/test_backend_suite.py](../tests/test_backend_suite.py)
+- [report_service.py](../backend/app/services/report_service.py)
+- [test_report_generation.py](../backend/tests/test_report_generation.py)
+- [test_backend_suite.py](../backend/tests/test_backend_suite.py)
 
 ### Layer 4: ML gating path
 
@@ -78,9 +78,9 @@ Checks:
 
 Evidence:
 
-- [app/services/ml_inference.py](../app/services/ml_inference.py)
-- [app/core/config.py](../app/core/config.py)
-- [tests/test_ml_inference.py](../tests/test_ml_inference.py)
+- [ml_inference.py](../backend/app/services/ml_inference.py)
+- [config.py](../backend/app/core/config.py)
+- [test_ml_inference.py](../backend/tests/test_ml_inference.py)
 - [docs/ml-data-and-artifacts-inventory.md](ml-data-and-artifacts-inventory.md)
 
 ### Layer 5: auth and ownership validation
@@ -95,8 +95,8 @@ Checks:
 
 Evidence:
 
-- [app/core/security.py](../app/core/security.py)
-- [tests/test_backend_suite.py](../tests/test_backend_suite.py)
+- [security.py](../backend/app/core/security.py)
+- [test_backend_suite.py](../backend/tests/test_backend_suite.py)
 
 ## 4. End-to-end execution checklist
 

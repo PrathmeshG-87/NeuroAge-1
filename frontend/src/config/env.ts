@@ -5,7 +5,7 @@ export const appConfig = {
     !import.meta.env.VITE_API_BASE_URL,
   timeoutMs: Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 15000),
   enablePolling: import.meta.env.VITE_ENABLE_POLLING !== 'false',
-  dataSource: import.meta.env.VITE_API_BASE_URL ? 'production' : 'demo',
+  dataSource: import.meta.env.VITE_API_BASE_URL ? 'local' : 'demo',
 } as const
 
 export function buildApiUrl(path: string): string {

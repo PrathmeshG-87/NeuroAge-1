@@ -25,6 +25,7 @@ import { MRIUploader } from '@/components/mri/MRIUploader'
 import { MRIViewer } from '@/components/mri/MRIViewer'
 import { MedicalDisclaimer } from '@/components/assessment/MedicalDisclaimer'
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { assessmentService, type AssessmentResult } from '@/services/assessment'
 import {
@@ -121,6 +122,8 @@ export const AssessmentDetailPage: React.FC = () => {
   const [loadedId, setLoadedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(Boolean(id))
   const [error, setError] = useState<string | null>(null)
+  const [openingReport, setOpeningReport] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
   const currentResult = resultId === id ? liveResult : null
   const isLoadingCurrent = loading || loadedId !== id
 
@@ -295,6 +298,39 @@ export const AssessmentDetailPage: React.FC = () => {
     Number.isFinite(result.predictedBrainAge)
       ? result.predictedBrainAge - result.chronologicalAge
       : null
+
+  const handleViewReport = async () => {
+    if (openingReport) return
+
+    const reportWindow = window.open('', '_blank')
+    if (!reportWindow) {
+      setReportError('Allow pop-ups to open the report PDF in a new tab.')
+      return
+    }
+
+    reportWindow.opener = null
+    setOpeningReport(true)
+    setReportError(null)
+    try {
+      const { blob } = await reportService.downloadReport(result.assessmentId)
+      const reportUrl = window.URL.createObjectURL(blob)
+      reportWindow.location.href = reportUrl
+      reportWindow.addEventListener(
+        'beforeunload',
+        () => window.URL.revokeObjectURL(reportUrl),
+        { once: true },
+      )
+    } catch (reportLoadError) {
+      reportWindow.close()
+      setReportError(
+        reportLoadError instanceof Error
+          ? reportLoadError.message
+          : 'Unable to open the report PDF.',
+      )
+    } finally {
+      setOpeningReport(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -503,6 +539,23 @@ export const AssessmentDetailPage: React.FC = () => {
           ))}
         </ul>
       </Card>
+
+      <div className="space-y-3">
+        <Button
+          type="button"
+          onClick={() => void handleViewReport()}
+          isLoading={openingReport}
+          disabled={result.status !== 'completed'}
+        >
+          <FileText className="h-4 w-4" />
+          {openingReport ? 'Opening report…' : 'View report PDF'}
+        </Button>
+        {reportError ? (
+          <p role="alert" className="text-sm text-[#fca5a5]">
+            {reportError}
+          </p>
+        ) : null}
+      </div>
 
       <MedicalDisclaimer />
     </div>

@@ -17,7 +17,7 @@ client = TestClient(app)
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
     reader = PdfReader(io.BytesIO(pdf_bytes))
     pages = [page.extract_text() or '' for page in reader.pages]
-    return '\n'.join(pages)
+    return ' '.join('\n'.join(pages).split())
 
 
 def test_generate_assessment_report_pdf_uses_saved_assessment_values() -> None:
@@ -55,9 +55,24 @@ def test_generate_assessment_report_pdf_uses_saved_assessment_values() -> None:
     assert 'v1.2.3-qa' in extracted_text
     assert 'Taylor Reed' in extracted_text
     assert assessment_id not in extracted_text
+    assert 'Health tips' in extracted_text
+    assert 'Focused routine (difference over 5 to 10 years)' in extracted_text
+    assert 'Screen time' in extracted_text
+    assert 'Sleep cycle' in extracted_text
+    assert 'Nutrition plan (vegetarian)' in extracted_text
+    assert 'Nutrition plan (non-vegetarian)' in extracted_text
+    assert 'Exercise' in extracted_text
+    assert 'at least 10 minutes daily' in extracted_text
+    assert 'Uncertainty interval' not in extracted_text
+    assert 'Evaluation dataset' not in extracted_text
+    assert 'Last evaluated' not in extracted_text
+    assert 'ADNI subset' not in extracted_text
+    assert '2026-01-15' not in extracted_text
+    assert 'Clinical and scientific safeguards' not in extracted_text
+    assert 'MRI visualization' not in extracted_text
 
 
-def test_report_escapes_markup_and_rejects_reversed_intervals() -> None:
+def test_report_escapes_markup_and_omits_uncertainty_interval() -> None:
     assessment = {
         'assessment_id': 'NA-private-identifier',
         'status': 'completed',
@@ -74,8 +89,81 @@ def test_report_escapes_markup_and_rejects_reversed_intervals() -> None:
 
     assert 'A&B <subject>' in text
     assert 'Limit <tag> & keep as text' in text
-    assert 'Invalid interval' in text
+    assert 'Invalid interval' not in text
+    assert 'Uncertainty interval' not in text
     assert 'NA-private-identifier' not in text
+
+
+@pytest.mark.parametrize(
+    (
+        'difference',
+        'expected_level',
+        'expected_meditation_time',
+        'expected_vegetarian_plan',
+        'expected_non_vegetarian_plan',
+    ),
+    [
+        (-8.0, 'Lower estimate (difference at or below -5 years)', 'at least 5 minutes.', 'yogurt with oats and fruit', 'fish with leafy greens'),
+        (-2.0, 'Maintenance (difference at or below 0 years)', 'at least 5 minutes daily', 'oatmeal with milk', 'chicken with vegetables'),
+        (3.0, 'Foundational habits (difference over 0 to 5 years)', 'at least 5 minutes daily', 'Fiber-at-meals plan', 'beans, vegetables, and brown rice'),
+        (8.0, 'Focused routine (difference over 5 to 10 years)', 'at least 10 minutes daily', 'overnight oats with fruit', 'prepared fish or chicken'),
+        (12.0, 'Structured routine (difference over 10 years)', 'at least 15 minutes daily', 'add fruit to oats', 'add chicken or fish'),
+    ],
+)
+def test_health_tips_vary_by_brain_age_difference(
+    difference: float,
+    expected_level: str,
+    expected_meditation_time: str,
+    expected_vegetarian_plan: str,
+    expected_non_vegetarian_plan: str,
+) -> None:
+    assessment = {
+        'status': 'completed',
+        'chronological_age': 50.0,
+        'output_payload': {
+            'predicted_brain_age': 50.0 + difference,
+            'brain_age_difference': difference,
+        },
+    }
+
+    text = _extract_pdf_text(generate_assessment_report_pdf(assessment))
+
+    assert expected_level in text
+    assert expected_meditation_time in text
+    assert 'Nutrition plan (vegetarian)' in text
+    assert 'Nutrition plan (non-vegetarian)' in text
+    assert expected_vegetarian_plan in text
+    assert expected_non_vegetarian_plan in text
+
+
+def test_health_tips_use_difference_from_reported_ages_not_stale_saved_difference() -> None:
+    assessment = {
+        'status': 'completed',
+        'chronological_age': 60.0,
+        'output_payload': {
+            'predicted_brain_age': 52.0,
+            'brain_age_difference': 8.0,
+        },
+    }
+
+    text = _extract_pdf_text(generate_assessment_report_pdf(assessment))
+
+    assert 'Lower estimate (difference at or below -5 years)' in text
+    assert 'Brain-age difference used: -8.0 years' in text
+    assert 'Brain-age difference used: 8.0 years' not in text
+
+
+def test_health_tips_use_calculated_difference_when_not_supplied() -> None:
+    assessment = {
+        'status': 'completed',
+        'chronological_age': 50.0,
+        'output_payload': {'predicted_brain_age': 58.0},
+    }
+
+    text = _extract_pdf_text(generate_assessment_report_pdf(assessment))
+
+    assert 'Focused routine (difference over 5 to 10 years)' in text
+    assert 'Brain-age difference used: 8.0 years' in text
 
 
 def test_report_download_requires_matching_owner_for_completed_assessment() -> None:

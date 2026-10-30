@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssessmentDetailPage } from './RoutePlaceholders'
 import { assessmentService, type AssessmentResult } from '@/services/assessment'
+import { reportService } from '@/services/reports'
 
 vi.mock('@/components/mri/MRIViewer', () => ({
   MRIViewer: () => null,
@@ -22,6 +23,10 @@ vi.mock('@/services/assessment', async (importOriginal) => {
 })
 
 describe('AssessmentDetailPage', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   beforeEach(() => {
     vi.mocked(assessmentService.fetchAssessmentResult).mockResolvedValue({
       assessmentId: 'test-assessment',
@@ -58,5 +63,66 @@ describe('AssessmentDetailPage', () => {
     expect(screen.queryByText('Prediction interval')).not.toBeInTheDocument()
     expect(screen.queryByText('Test-set MAE')).not.toBeInTheDocument()
     expect(screen.getByText('36.9 years')).toBeInTheDocument()
+  })
+
+  it('opens the completed assessment report PDF in a new browser tab', async () => {
+    const reportWindow = {
+      opener: window,
+      location: { href: '' },
+      addEventListener: vi.fn(),
+      close: vi.fn(),
+    } as unknown as Window
+    const pdfBlob = new Blob(['%PDF-1.4'], { type: 'application/pdf' })
+    vi.spyOn(window, 'open').mockReturnValue(reportWindow)
+    vi.spyOn(reportService, 'downloadReport').mockResolvedValue({
+      blob: pdfBlob,
+      fileName: 'assessment.pdf',
+    })
+    vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:assessment')
+
+    render(
+      <MemoryRouter initialEntries={['/assessments/test-assessment']}>
+        <Routes>
+          <Route
+            path="/assessments/:id"
+            element={<AssessmentDetailPage />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View report PDF' }))
+
+    await waitFor(() => {
+      expect(reportService.downloadReport).toHaveBeenCalledWith(
+        'test-assessment',
+      )
+    })
+    expect(window.open).toHaveBeenCalledWith('', '_blank')
+    expect(reportWindow.opener).toBeNull()
+    expect(reportWindow.location.href).toBe('blob:assessment')
+  })
+
+  it('explains when the browser blocks opening the report tab', async () => {
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    const downloadReport = vi.spyOn(reportService, 'downloadReport')
+
+    render(
+      <MemoryRouter initialEntries={['/assessments/test-assessment']}>
+        <Routes>
+          <Route
+            path="/assessments/:id"
+            element={<AssessmentDetailPage />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View report PDF' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Allow pop-ups to open the report PDF in a new tab.',
+    )
+    expect(downloadReport).not.toHaveBeenCalled()
   })
 })

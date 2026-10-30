@@ -29,28 +29,99 @@ def _format_yrs(value: Any) -> str:
     return f'{numeric:.1f} years'
 
 
-def _format_interval(values: Any) -> str:
-    if values is None:
-        return 'Not provided'
-    try:
-        lower, upper = values
-    except (TypeError, ValueError):
-        return 'Invalid interval'
-    lower_value = _to_float(lower)
-    upper_value = _to_float(upper)
-    if lower_value is None or upper_value is None:
-        return 'Invalid interval'
-    if lower_value > upper_value:
-        return 'Invalid interval'
-    return f'{lower_value:.1f} to {upper_value:.1f} years'
-
-
 def _get_output_field(assessment: dict[str, Any], *keys: str) -> Any:
     output = assessment.get('output_payload') or {}
     for key in keys:
         if key in output:
             return output.get(key)
     return assessment.get(key)
+
+
+def _nutrition_tips(difference: float | None) -> tuple[tuple[str, str], tuple[str, str]]:
+    vegetarian_label = 'Nutrition plan (vegetarian)'
+    non_vegetarian_label = 'Nutrition plan (non-vegetarian)'
+    if difference is None:
+        return (
+            (vegetarian_label, 'Meal ideas: breakfast, oats with fruit and nuts; lunch, lentils with whole grains and vegetables; dinner, tofu with vegetables.'),
+            (non_vegetarian_label, 'Meal ideas: breakfast, eggs with whole-grain toast and fruit; lunch, fish or chicken with whole grains and vegetables; dinner, beans with vegetables.'),
+        )
+    if difference <= -5:
+        return (
+            (vegetarian_label, 'Variety plan: breakfast, yogurt or fortified soy yogurt with oats and fruit; lunch, lentils, leafy greens, and brown rice; dinner, tofu with mixed vegetables and whole grains.'),
+            (non_vegetarian_label, 'Variety plan: breakfast, eggs with whole-grain toast and fruit; lunch, fish with leafy greens and brown rice; dinner, bean soup with vegetables, or lean chicken with whole grains.'),
+        )
+    if difference <= 0:
+        return (
+            (vegetarian_label, 'Regular-meal plan: breakfast, oatmeal with milk or fortified soy drink and fruit; lunch, chickpea and vegetable bowl with whole grains; dinner, paneer or tofu with vegetables and roti.'),
+            (non_vegetarian_label, 'Regular-meal plan: breakfast, eggs with whole-grain toast and fruit; lunch, chicken with vegetables and whole grains; dinner, lentil soup with vegetables, or fish with roti.'),
+        )
+    if difference <= 5:
+        return (
+            (vegetarian_label, 'Fiber-at-meals plan: breakfast, fruit with oats and yogurt or fortified soy yogurt; lunch, rajma or beans with brown rice and vegetables; dinner, tofu with vegetables and whole-grain roti.'),
+            (non_vegetarian_label, 'Fiber-at-meals plan: breakfast, eggs with oats or whole-grain toast and fruit; lunch, fish or chicken with beans, vegetables, and brown rice; dinner, vegetable dal with an egg if desired.'),
+        )
+    if difference <= 10:
+        return (
+            (vegetarian_label, 'Meal-prep plan: breakfast, overnight oats with fruit and seeds; lunch, lentil and vegetable grain bowl; dinner, tofu or chickpeas with vegetables and whole grains.'),
+            (non_vegetarian_label, 'Meal-prep plan: breakfast, boiled eggs with fruit and whole-grain toast; lunch, prepared fish or chicken with vegetables and whole grains; dinner, bean and vegetable soup with an egg if desired.'),
+        )
+    return (
+        (vegetarian_label, 'Gradual plate-building plan: breakfast, add fruit to oats or whole-grain toast; lunch, add a serving of lentils or beans and vegetables to a grain bowl; dinner, add tofu with vegetables and rice or roti.'),
+        (non_vegetarian_label, 'Gradual plate-building plan: breakfast, eggs with fruit and whole-grain toast; lunch, add chicken or fish plus vegetables to rice or roti; dinner, include beans or lentils with vegetables, with egg or lean poultry if desired.'),
+    )
+
+
+def _health_tips(brain_age_difference: Any) -> tuple[str, list[tuple[str, str]]]:
+    difference = _to_float(brain_age_difference)
+    nutrition_tips = _nutrition_tips(difference)
+    if difference is None:
+        return 'General wellness', [
+            ('Screen time', 'Take regular screen breaks and reduce device use before bedtime.'),
+            ('Sleep cycle', 'Keep a consistent sleep and wake schedule and allow 7-9 hours for sleep.'),
+            *nutrition_tips,
+            ('Exercise', 'Build toward at least 150 minutes of moderate activity each week, plus strength activity on 2 days.'),
+            ('Meditation', 'Start with at least 5 minutes of quiet breathing or mindfulness each day.'),
+        ]
+
+    if difference <= -5:
+        return 'Lower estimate (difference at or below -5 years)', [
+            ('Screen time', 'Keep regular eye and movement breaks during long screen sessions and avoid screens during the last hour before bed.'),
+            ('Sleep cycle', 'Maintain your current healthy routine with a consistent sleep and wake time and 7-9 hours nightly.'),
+            *nutrition_tips,
+            ('Exercise', 'Continue regular activity and aim for at least 150 minutes of moderate exercise weekly, with strength activity on 2 days.'),
+            ('Meditation', 'Maintain a daily mindfulness or breathing routine for at least 5 minutes.'),
+        ]
+    if difference <= 0:
+        return 'Maintenance (difference at or below 0 years)', [
+            ('Screen time', 'Take a short movement or eye break during long screen sessions and keep the last 30 minutes before bed screen-free.'),
+            ('Sleep cycle', 'Maintain a regular sleep and wake time and aim for 7-9 hours nightly.'),
+            *nutrition_tips,
+            ('Exercise', 'Maintain regular activity; aim for at least 150 minutes of moderate exercise weekly and strength activity on 2 days.'),
+            ('Meditation', 'Practice for at least 5 minutes daily, or continue a routine that works for you.'),
+        ]
+    if difference <= 5:
+        return 'Foundational habits (difference over 0 to 5 years)', [
+            ('Screen time', 'Take a brief break every 30–60 minutes and make the last hour before bed screen-light.'),
+            ('Sleep cycle', 'Set a steady bedtime and wake time, and protect a 7-9-hour sleep opportunity each night.'),
+            *nutrition_tips,
+            ('Exercise', 'Schedule regular walks or similar moderate activity and work toward 150 minutes weekly, with strength activity on 2 days.'),
+            ('Meditation', 'Set aside at least 5 minutes daily for breathing or mindfulness.'),
+        ]
+    if difference <= 10:
+        return 'Focused routine (difference over 5 to 10 years)', [
+            ('Screen time', 'Plan screen-free breaks during the day and stop recreational screen use about 1 hour before bed.'),
+            ('Sleep cycle', 'Keep wake time consistent, wind down before bed, and allow 7-9 hours for sleep each night.'),
+            *nutrition_tips,
+            ('Exercise', 'Put moderate activity on the calendar across the week; gradually work toward 150 minutes weekly and strength activity on 2 days.'),
+            ('Meditation', 'Aim for at least 10 minutes daily of mindfulness, meditation, or slow breathing.'),
+        ]
+    return 'Structured routine (difference over 10 years)', [
+        ('Screen time', 'Add planned screen-free blocks, take movement breaks, and keep devices out of the bedroom during the hour before sleep.'),
+        ('Sleep cycle', 'Choose a consistent wake time, follow a calming wind-down routine, and reserve 7-9 hours for sleep nightly.'),
+        *nutrition_tips,
+        ('Exercise', 'If currently inactive, begin with manageable 10-minute walks and build gradually toward 150 minutes of moderate activity weekly plus strength activity on 2 days.'),
+        ('Meditation', 'Build toward at least 15 minutes daily of mindfulness or slow breathing, starting shorter if needed.'),
+    ]
 
 
 def generate_assessment_report_pdf(assessment: dict[str, Any]) -> bytes:
@@ -62,10 +133,13 @@ def generate_assessment_report_pdf(assessment: dict[str, Any]) -> bytes:
         raise ValueError('Report generation is only supported for completed assessments.')
 
     output = assessment.get('output_payload') or {}
-    chronological_age = assessment.get('chronological_age')
-    predicted_brain_age = output.get('predicted_brain_age')
-    brain_age_difference = output.get('brain_age_difference')
-    uncertainty_interval = output.get('uncertainty_interval')
+    chronological_age = _get_output_field(assessment, 'chronological_age')
+    predicted_brain_age = _get_output_field(assessment, 'predicted_brain_age')
+    brain_age_difference = _get_output_field(assessment, 'brain_age_difference')
+    predicted_value = _to_float(predicted_brain_age)
+    chronological_value = _to_float(chronological_age)
+    if predicted_value is not None and chronological_value is not None:
+        brain_age_difference = predicted_value - chronological_value
 
     if predicted_brain_age is None and chronological_age is None and 'model_name' not in output:
         raise ValueError('The assessment does not contain result data suitable for a report.')
@@ -126,11 +200,8 @@ def generate_assessment_report_pdf(assessment: dict[str, Any]) -> bytes:
         ['Chronological age', _format_yrs(chronological_age)],
         ['Predicted brain age', _format_yrs(predicted_brain_age)],
         ['Brain age difference', _format_yrs(brain_age_difference)],
-        ['Uncertainty interval', _format_interval(uncertainty_interval)],
         ['Model name', str(output.get('model_name') or assessment.get('model_name') or 'Not available')],
         ['Model version', str(output.get('model_version') or assessment.get('model_version') or 'Not available')],
-        ['Evaluation dataset', str(output.get('evaluation_dataset') or output.get('dataset_evaluated') or 'Not available')],
-        ['Last evaluated', str(output.get('last_evaluated') or 'Not available')],
     ]
     report_table = Table(table_data, colWidths=[220, 200])
     report_table.setStyle(
@@ -163,24 +234,19 @@ def generate_assessment_report_pdf(assessment: dict[str, Any]) -> bytes:
         story.append(Paragraph(f'• {escape(str(item))}', body_style))
 
     story.append(Spacer(1, 12))
-    story.append(Paragraph('Clinical and scientific safeguards', heading_style))
+    story.append(Paragraph('Health tips', heading_style))
+    tip_level, tips = _health_tips(brain_age_difference)
+    difference_text = _format_yrs(brain_age_difference)
     story.append(Paragraph(
-        'This report does not constitute a diagnostic certificate, treatment recommendation, or medical claim. '
-        'No unsupported clinical treatment advice is included.',
+        f'Personalization level: {escape(tip_level)}. Brain-age difference used: {escape(difference_text)}.',
         body_style,
     ))
     story.append(Paragraph(
-        'Research use only: this output is intended to support scientific review and exploratory analysis, not diagnosis or therapeutic decision-making.',
-        body_style,
+        'These general wellness ideas and meal examples are educational, not medical advice. The brain-age difference is a model estimate and does not determine nutritional needs. Adapt meal ideas for allergies, dietary needs, and clinician advice.',
+        small_style,
     ))
-    story.append(Spacer(1, 18))
-
-    if 'mri_preview' in output or 'mri_preview_url' in output:
-        story.append(Paragraph('MRI visualization', heading_style))
-        story.append(Paragraph('MRI preview information is available in the assessment metadata.', body_style))
-    else:
-        story.append(Paragraph('MRI visualization', heading_style))
-        story.append(Paragraph('No approved MRI preview or visualization was supplied for this assessment.', body_style))
+    for label, recommendation in tips:
+        story.append(Paragraph(f'<b>{escape(label)}:</b> {escape(recommendation)}', body_style))
 
     def on_page(canvas, doc):
         canvas.saveState()
